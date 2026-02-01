@@ -88,19 +88,36 @@ const renderBubbles = () => {
     const svgLayer = document.getElementById('bubbleSvg');
     if (!container || !svgLayer) return;
     
-    container.querySelectorAll('.bubble').forEach(b => b.remove());
-    svgLayer.innerHTML = '';
-
     const keywords = brainstormData.allKeywords;
-    if (keywords.length === 0) return;
+    if (keywords.length === 0) {
+        container.querySelectorAll('.bubble').forEach(b => b.remove());
+        svgLayer.innerHTML = '';
+        return;
+    }
 
-    const nodes = keywords.map(word => ({
-        id: word,
-        x: Math.random() * container.offsetWidth,
-        y: Math.random() * container.offsetHeight,
-        vx: 0,
-        vy: 0
-    }));
+    // --- Identify nodes to add, keep, or remove ---
+    const currentBubbles = Array.from(container.querySelectorAll('.bubble:not(.exiting)'));
+    const currentWords = currentBubbles.map(b => b.dataset.word);
+    
+    // Nodes to remove
+    currentBubbles.forEach(bubble => {
+        if (!keywords.includes(bubble.dataset.word)) {
+            bubble.classList.add('exiting');
+            setTimeout(() => bubble.remove(), 500);
+        }
+    });
+
+    const nodes = keywords.map(word => {
+        const existingBubble = currentBubbles.find(b => b.dataset.word === word);
+        return {
+            id: word,
+            x: existingBubble ? parseFloat(existingBubble.style.left) + existingBubble.offsetWidth / 2 : Math.random() * container.offsetWidth,
+            y: existingBubble ? parseFloat(existingBubble.style.top) + existingBubble.offsetHeight / 2 : Math.random() * container.offsetHeight,
+            vx: 0,
+            vy: 0,
+            isNew: !currentWords.includes(word)
+        };
+    });
 
     const nodeMap = {};
     nodes.forEach(n => nodeMap[n.id] = n);
@@ -108,14 +125,13 @@ const renderBubbles = () => {
     const connections = brainstormData.connections;
     const bubbleMap = {};
 
-    // --- Simple Force-Directed Simulation ---
+    // --- Force-Directed Simulation (Maintain User Logic) ---
     const iterations = 150;
     const k = Math.sqrt((container.offsetWidth * container.offsetHeight) / nodes.length) * 0.8;
     const repulsionBase = k * k;
     const attractionBase = k;
 
     for (let i = 0; i < iterations; i++) {
-        // 1. Repulsion between all nodes
         for (let i1 = 0; i1 < nodes.length; i1++) {
             for (let i2 = i1 + 1; i2 < nodes.length; i2++) {
                 const n1 = nodes[i1], n2 = nodes[i2];
@@ -131,7 +147,6 @@ const renderBubbles = () => {
             }
         }
 
-        // 2. Attraction between connected nodes
         connections.forEach(conn => {
             const n1 = nodeMap[conn.source];
             const n2 = nodeMap[conn.target];
@@ -140,7 +155,6 @@ const renderBubbles = () => {
                 const dy = n1.y - n2.y;
                 const distSq = dx * dx + dy * dy + 0.01;
                 const dist = Math.sqrt(distSq);
-                // Weight by strength (default to 5 if not provided)
                 const strength = conn.strength || 5;
                 const force = (distSq / attractionBase) * (strength / 10);
                 const fx = (dx / dist) * force;
@@ -150,7 +164,6 @@ const renderBubbles = () => {
             }
         });
 
-        // 3. Gravity/Center force
         const centerX = container.offsetWidth / 2;
         const centerY = container.offsetHeight / 2;
         nodes.forEach(n => {
@@ -160,22 +173,18 @@ const renderBubbles = () => {
             n.vy -= dy * 0.05;
         });
 
-        // 4. Apply forces and damping
         nodes.forEach(n => {
             n.x += n.vx * 0.1;
             n.y += n.vy * 0.1;
-            // Damping
             n.vx *= 0.5;
             n.vy *= 0.5;
-
-            // Boundary Constraints
             const padding = 40;
             n.x = Math.max(padding, Math.min(container.offsetWidth - padding, n.x));
             n.y = Math.max(padding, Math.min(container.offsetHeight - padding, n.y));
         });
     }
 
-    // --- Rendering ---
+    // --- Rendering with Transitions ---
     const drawConnections = () => {
         svgLayer.innerHTML = '';
         connections.forEach(conn => {
@@ -190,7 +199,6 @@ const renderBubbles = () => {
                 line.setAttribute("x1", sX); line.setAttribute("y1", sY);
                 line.setAttribute("x2", tX); line.setAttribute("y2", tY);
                 line.setAttribute("class", "connection-line");
-                // Strength affects opacity
                 line.style.opacity = 0.1 + (conn.strength || 5) / 15;
                 svgLayer.appendChild(line);
             }
@@ -198,63 +206,76 @@ const renderBubbles = () => {
     };
 
     nodes.forEach(node => {
-        const bubble = document.createElement('div');
-        bubble.className = 'bubble';
-        bubble.dataset.word = node.id;
-        bubble.textContent = node.id;
-        container.appendChild(bubble);
+        let bubble = currentBubbles.find(b => b.dataset.word === node.id);
         
-        // Offset to center the bubble on its calculated x,y
+        if (!bubble) {
+            bubble = document.createElement('div');
+            bubble.className = 'bubble entering';
+            bubble.dataset.word = node.id;
+            bubble.textContent = node.id;
+            container.appendChild(bubble);
+            
+            // Trigger entering animation
+            requestAnimationFrame(() => {
+                bubble.classList.remove('entering');
+            });
+
+            // Draggable Logic
+            let isDragging = false, startX, startY;
+            bubble.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                bubble.classList.add('dragging');
+                bubble.style.animation = 'none';
+                startX = e.clientX - parseFloat(bubble.style.left);
+                startY = e.clientY - parseFloat(bubble.style.top);
+                e.stopPropagation();
+            });
+            document.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                let newX = e.clientX - startX, newY = e.clientY - startY;
+                newX = Math.max(0, Math.min(newX, container.offsetWidth - bubble.offsetWidth));
+                newY = Math.max(0, Math.min(newY, container.offsetHeight - bubble.offsetHeight));
+                bubble.style.left = `${newX}px`; bubble.style.top = `${newY}px`;
+                drawConnections();
+            });
+            document.addEventListener('mouseup', () => {
+                if (isDragging) {
+                    isDragging = false;
+                    bubble.classList.remove('dragging');
+                    bubble.style.animation = 'float 5s ease-in-out infinite';
+                }
+            });
+
+            bubble.addEventListener('mouseenter', () => {
+                document.querySelectorAll(`.card-tag`).forEach(tag => {
+                    if (tag.textContent === node.id) tag.classList.add('highlight');
+                });
+            });
+            bubble.addEventListener('mouseleave', () => {
+                document.querySelectorAll(`.card-tag`).forEach(tag => tag.classList.remove('highlight'));
+            });
+
+            bubble.onclick = () => {
+                const input = document.getElementById('ideaInput');
+                input.value = (input.value ? input.value + ' ' : '') + node.id;
+                input.focus();
+            };
+        }
+        
+        // Update position (smoothly via CSS transition)
         bubble.style.left = `${node.x - bubble.offsetWidth / 2}px`;
         bubble.style.top = `${node.y - bubble.offsetHeight / 2}px`;
         bubble.style.animationDelay = `${Math.random() * 2}s`;
         
         bubbleMap[node.id] = bubble;
-
-        // Draggable Logic
-        let isDragging = false, startX, startY;
-        bubble.addEventListener('mousedown', (e) => {
-            isDragging = true;
-            bubble.classList.add('dragging');
-            bubble.style.animation = 'none';
-            startX = e.clientX - parseFloat(bubble.style.left);
-            startY = e.clientY - parseFloat(bubble.style.top);
-            e.stopPropagation();
-        });
-        document.addEventListener('mousemove', (e) => {
-            if (!isDragging) return;
-            let newX = e.clientX - startX, newY = e.clientY - startY;
-            newX = Math.max(0, Math.min(newX, container.offsetWidth - bubble.offsetWidth));
-            newY = Math.max(0, Math.min(newY, container.offsetHeight - bubble.offsetHeight));
-            bubble.style.left = `${newX}px`; bubble.style.top = `${newY}px`;
-            drawConnections();
-        });
-        document.addEventListener('mouseup', () => {
-            if (isDragging) {
-                isDragging = false;
-                bubble.classList.remove('dragging');
-                bubble.style.animation = 'float 5s ease-in-out infinite';
-            }
-        });
-
-        // Highlight Logic
-        bubble.addEventListener('mouseenter', () => {
-            document.querySelectorAll(`.card-tag`).forEach(tag => {
-                if (tag.textContent === node.id) tag.classList.add('highlight');
-            });
-        });
-        bubble.addEventListener('mouseleave', () => {
-            document.querySelectorAll(`.card-tag`).forEach(tag => tag.classList.remove('highlight'));
-        });
-
-        bubble.onclick = () => {
-            const input = document.getElementById('ideaInput');
-            input.value = (input.value ? input.value + ' ' : '') + node.id;
-            input.focus();
-        };
     });
 
-    setTimeout(drawConnections, 50);
+    // 定期更新连接线，以跟随平滑移动的节点
+    let connTicks = 0;
+    const updateConnInterval = setInterval(() => {
+        drawConnections();
+        if (++connTicks > 30) clearInterval(updateConnInterval); // 1.5s 后停止（匹配 transition 时间）
+    }, 50);
 };
 
 const renderMindmap = () => {
@@ -368,6 +389,44 @@ document.addEventListener('DOMContentLoaded', () => {
     const meetingContent = document.getElementById('meetingContent');
     let recognition = null;
     let isRecording = false;
+    let lastAITextLength = 0;
+    let aiTriggerTimer = null;
+
+    const silentUpdateAI = async (text) => {
+        if (!text || text.length < 10) return;
+        try {
+            console.log(" [Meeting] Silent AI update triggered...");
+            const aiResult = await callAIModel(`会议纪要实时内容：${text}`, brainstormData);
+            
+            // 更新全局状态 (增量更新关键词)
+            let hasNewData = false;
+            aiResult.keywords.forEach(kw => {
+                if (!brainstormData.allKeywords.includes(kw)) {
+                    brainstormData.allKeywords.push(kw);
+                    hasNewData = true;
+                }
+            });
+            if (aiResult.connections) {
+                aiResult.connections.forEach(conn => {
+                    const exists = brainstormData.connections.find(c => c.source === conn.source && c.target === conn.target);
+                    if (!exists) {
+                        brainstormData.connections.push(conn);
+                        hasNewData = true;
+                    }
+                });
+            }
+
+            if (hasNewData) {
+                displayResults();
+                renderBubbles();
+                // 自动保存
+                saveToLocalStorage();
+            }
+            lastAITextLength = text.length;
+        } catch (err) {
+            console.warn("Silent AI update failed:", err);
+        }
+    };
 
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -387,7 +446,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 meetingContent.innerHTML = '';
             }
             meetingContent.textContent = fullTranscript;
-            meetingContent.scrollTop = meetingContent.scrollHeight; // 自动滚动到底部
+            meetingContent.scrollTop = meetingContent.scrollHeight;
+
+            // 自动触发 AI 总结逻辑
+            clearTimeout(aiTriggerTimer);
+            
+            // 触发条件：文字增加超过 50 字，或者停顿 3 秒
+            const textDiff = fullTranscript.length - lastAITextLength;
+            if (textDiff > 50) {
+                silentUpdateAI(fullTranscript);
+            } else {
+                aiTriggerTimer = setTimeout(() => {
+                    if (fullTranscript.length > lastAITextLength) {
+                        silentUpdateAI(fullTranscript);
+                    }
+                }, 3000);
+            }
         };
 
         recognition.onerror = (event) => {
