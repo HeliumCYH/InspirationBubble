@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>灵感气泡 - AI 头脑风暴辅助工具</title>
+    <style>
+        :root {
+            --primary-color: #4a90e2;
+            --bg-color: #f5f7fa;
+            --card-bg: #ffffff;
+            --text-color: #333333;
+            --border-radius: 8px;
+            --shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            background-color: var(--card-bg);
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 320px 1fr 300px;
+            gap: 20px;
+            padding: 20px;
+            flex-grow: 1;
+            overflow: hidden;
+        }
+
+        section {
+            background-color: var(--card-bg);
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        h2 {
+            font-size: 1.1rem;
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+            background-color: #fafafa;
+        }
+
+        /* 输入区样式 */
+        .input-section {
+            padding: 0;
+        }
+        .input-container {
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            height: 100%;
+        }
+        textarea {
+            width: 100%;
+            height: 150px;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            resize: none;
+            font-size: 0.95rem;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+        textarea:focus {
+            border-color: var(--primary-color);
+        }
+        button {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: opacity 0.3s;
+        }
+        button:hover {
+            opacity: 0.9;
+        }
+
+        /* 历史想法列表 */
+        .thought-history {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 15px;
+            border-top: 1px solid #eee;
+        }
+        .thought-item {
+            padding: 12px;
+            background: #fff;
+            border: 1px solid #eee;
+            border-left: 4px solid var(--primary-color);
+            border-radius: 6px;
+            margin-bottom: 12px;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            overflow: hidden;
+        }
+        .thought-item:hover {
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+            border-color: var(--primary-color);
+        }
+        .thought-item .original-text {
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .thought-item .original-text::after {
+            content: '▼';
+            font-size: 0.7rem;
+            color: #999;
+            transition: transform 0.3s;
+        }
+        .thought-item.expanded .original-text {
+            margin-bottom: 10px;
+        }
+        .thought-item.expanded .original-text::after {
+            transform: rotate(180deg);
+        }
+        .thought-details {
+            max-height: 0;
+            opacity: 0;
+            transition: all 0.3s ease;
+            overflow: hidden;
+        }
+        .thought-item.expanded .thought-details {
+            max-height: 500px;
+            opacity: 1;
+            padding-top: 5px;
+        }
+        .thought-item .summary-text {
+            color: #666;
+            font-size: 0.85rem;
+            background: #f9f9f9;
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            line-height: 1.5;
+        }
+        .thought-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+        .thought-tag {
+            font-size: 0.75rem;
+            color: var(--primary-color);
+            background: #eef5ff;
+            padding: 2px 8px;
+            border-radius: 10px;
+            border: 1px solid #d0e3ff;
+        }
+
+        /* 可视化区样式 */
+        .visual-section {
+            position: relative;
+        }
+        .visual-placeholder {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #999;
+            background-image: radial-gradient(#ddd 1px, transparent 0);
+            background-size: 20px 20px;
+        }
+        .visual-result {
+            display: none; /* 初始隐藏 */
+            padding: 20px;
+            overflow-y: auto;
+            position: relative;
+            height: 100%;
+            background: white;
+        }
+        
+        .visual-title {
+            font-size: 1rem;
+            color: #666;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .visual-title::before {
+            content: '🕸️';
+        }
+        .summary-title {
+            font-size: 1rem;
+            color: #666;
+            margin-top: 30px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .summary-title::before {
+            content: '📝';
+        }
+        
+        /* 气泡样式 */
+        .bubble-container {
+            position: relative;
+            height: 500px; /* 增加高度以容纳更多关键词 */
+            margin-bottom: 30px;
+            background: rgba(74, 144, 226, 0.02);
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid #eee;
+        }
+        .bubble-svg-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1;
+        }
+        .connection-line {
+            stroke: var(--primary-color);
+            stroke-width: 1.5;
+            stroke-dasharray: 4;
+            opacity: 0.3;
+            animation: lineDash 20s linear infinite;
+        }
+        @keyframes lineDash {
+            to { stroke-dashoffset: -100; }
+        }
+        .bubble {
+            position: absolute;
+            background: white;
+            border: 2px solid var(--primary-color);
+            color: var(--primary-color);
+            padding: 10px 18px;
+            border-radius: 50px;
+            font-size: 0.9rem;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(74, 144, 226, 0.15);
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            animation: float 5s ease-in-out infinite;
+            white-space: nowrap;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            z-index: 2;
+        }
+        .bubble:hover {
+            transform: scale(1.15) translateY(-5px);
+            z-index: 100;
+            background: var(--primary-color);
+            color: white;
+            box-shadow: 0 8px 25px rgba(74, 144, 226, 0.4);
+        }
+        .bubble:active {
+            transform: scale(0.95);
+        }
+        .bubble::before {
+            content: '🫧';
+            font-size: 0.8rem;
+        }
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+
+        /* 脑图/总结卡片样式 */
+        .mindmap-container {
+            flex-grow: 1;
+            padding: 10px;
+            background: #fff;
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .summary-card {
+            background: #f0f7ff;
+            border-left: 4px solid var(--primary-color);
+            padding: 20px;
+            border-radius: 8px;
+            position: relative;
+        }
+        .summary-card .summary-content {
+            font-size: 1.1rem;
+            color: #333;
+            margin-bottom: 15px;
+            line-height: 1.6;
+        }
+        .summary-card .card-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .card-tag {
+            background: white;
+            border: 1px solid var(--primary-color);
+            color: var(--primary-color);
+            padding: 6px 15px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .summary-box {
+            display: none; /* 隐藏旧版总结盒，改用脑图 */
+        }
+        .keyword-group {
+            display: none; /* 隐藏旧版关键词组，改用气泡 */
+        }
+        
+        /* 加载状态 */
+        .loading-overlay {
+            display: none;
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(255,255,255,0.8);
+            z-index: 10;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* AI 灵感推荐区样式 */
+        .ai-section {
+            background-color: #fcfcfc;
+        }
+        .ai-content {
+            padding: 15px;
+            overflow-y: auto;
+        }
+        .ai-card {
+            background: white;
+            padding: 12px;
+            border-radius: 6px;
+            border: 1px dashed var(--primary-color);
+            margin-bottom: 15px;
+            font-size: 0.9rem;
+        }
+        .ai-card h3 {
+            font-size: 0.95rem;
+            margin-bottom: 5px;
+            color: var(--primary-color);
+        }
+        .tag-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .tag {
+            background: #eef5ff;
+            color: var(--primary-color);
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            cursor: pointer;
+        }
+        .tag:hover {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        @media (max-width: 1024px) {
+            .container {
+                grid-template-columns: 1fr;
+                overflow-y: auto;
+            }
+            section {
+                height: 400px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Inspiration Bubble 🫧</h1>
+        <div class="user-info">
+            <span>头脑风暴模式</span>
+        </div>
+    </header>
+
+    <main class="container">
+        <!-- 输入区 -->
+        <section class="input-section">
+            <h2>想法输入 (Input)</h2>
+            <div class="input-container">
+                <textarea id="ideaInput" placeholder="在此输入你的想法、关键词或问题..."></textarea>
+                <div style="display: flex; gap: 10px;">
+                    <button id="submitBtn" style="flex-grow: 1;">捕捉灵感</button>
+                    <button id="voiceBtn" title="语音录入" style="background: white; color: var(--primary-color); border: 1px solid var(--primary-color); width: 45px; padding: 0; display: flex; align-items: center; justify-content: center;">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+                    </button>
+                </div>
+                <div class="thought-history" id="thoughtHistory">
+                    <p style="color: #999; font-size: 0.8rem; margin-bottom: 10px;">最近录入的灵感：</p>
+                    <!-- 历史记录将显示在这里 -->
+                </div>
+            </div>
+        </section>
+
+        <!-- 可视化展示区 -->
+        <section class="visual-section" id="visualSection">
+            <h2>思维总结 (Visualization)</h2>
+            <!-- 初始占位 -->
+            <div class="visual-placeholder" id="visualPlaceholder">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 2v8"></path>
+                    <path d="m16.2 4.2-2.8 2.8"></path>
+                    <path d="M22 12h-8"></path>
+                    <path d="m19.8 16.2-2.8-2.8"></path>
+                    <path d="M12 22v-8"></path>
+                    <path d="m7.8 19.8 2.8-2.8"></path>
+                    <path d="M2 12h8"></path>
+                    <path d="m4.2 7.8 2.8 2.8"></path>
+                </svg>
+                <p>提交想法后，AI 将在此生成总结与关键词</p>
+            </div>
+            <!-- 结果展示 -->
+            <div class="visual-result" id="visualResult">
+                <div class="visual-title">知识关联图谱</div>
+                <div class="bubble-container" id="bubbleContainer">
+                    <svg class="bubble-svg-layer" id="bubbleSvg"></svg>
+                    <!-- 气泡将在此动态生成 -->
+                </div>
+                
+                <div class="summary-title">灵感深度解析</div>
+                <div class="mindmap-container" id="mindmapContainer">
+                    <!-- 脑图将在此动态生成 -->
+                </div>
+                <div class="summary-box" id="aiSummary"></div>
+                <div class="keyword-group" id="aiKeywords"></div>
+            </div>
+            <!-- 加载层 -->
+            <div class="loading-overlay" id="loadingOverlay">
+                <div class="spinner"></div>
+                <span>AI 正在思考中...</span>
+            </div>
+        </section>
+
+        <!-- AI 灵感推荐区 -->
+        <section class="ai-section">
+            <h2>AI 灵感推荐 (AI Recommendations)</h2>
+            <div class="ai-content">
+                <div class="ai-card">
+                    <h3>💡 联想词</h3>
+                    <p>基于您的输入，建议关注：</p>
+                    <div class="tag-container">
+                        <span class="tag">#用户体验</span>
+                        <span class="tag">#敏捷迭代</span>
+                        <span class="tag">#增长黑客</span>
+                    </div>
+                </div>
+                <div class="ai-card">
+                    <h3>🔍 延伸思考</h3>
+                    <p>如果将这个想法应用到移动端，会有什么不同？</p>
+                </div>
+                <div class="ai-card">
+                    <h3>📈 潜在痛点</h3>
+                    <p>注意实现过程中的技术兼容性问题。</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        // API Configuration
+        const API_KEY = "ms-e3c6f8fc-0500-4de8-9d9d-a9e8b87f8801";
+
+        // 全局统一数据对象：存储所有AI结果、关键词、关联
+        const brainstormData = {
+            thoughts: [], // 存储历史想法对象 { text, summary, keywords }
+            allKeywords: [], // 存储所有关键词
+            connections: [], // 存储关联关系 { source, target }
+            summary: "", // 最近一次总结
+            keywords: [] // 最近一次关键词
+        };
+        
+        // 通用AI调用函数：使用最稳定的 Qwen2 模型和公共 Endpoint
+        const callAIModel = (content) => {
+            // 获取现有关键词，让 AI 尝试建立跨灵感的联系
+            const existingKeywords = brainstormData.allKeywords.join(", ");
+            
+            const prompt = `你是一个头脑风暴助手。任务：
+1. 请对以下内容进行简洁总结（100字以内）。
+2. 提取3-5个核心关键词。
+3. 建立这些关键词之间，以及它们与现有关键词 [${existingKeywords}] 之间的逻辑联系（关联对）。
+要求：必须严格以 JSON 格式返回，不包含 Markdown 代码块。
+JSON 结构：{
+  "summary": "总结文字", 
+  "keywords": ["关键词1", "关键词2", ...], 
+  "connections": [{"source": "关键词1", "target": "关键词2"}, ...]
+}
+
+内容：${content}`;
+
+            const endpoint = "https://api-inference.modelscope.cn/v1/chat/completions";
+
+            return fetch(endpoint, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer " + API_KEY
+                },
+                body: JSON.stringify({
+                    model: "Qwen/Qwen2.5-7B-Instruct", 
+                    messages: [{ role: "user", content: prompt }],
+                    max_tokens: 1024,
+                    temperature: 0.7,
+                    enable_thinking: false
+                })
+            }).then(r => {
+                if (!r.ok) {
+                    let errorMsg = `API 请求失败 (状态码: ${r.status})`;
+                    if (r.status === 401) errorMsg = "鉴权失败：请检查 API KEY 是否正确。";
+                    if (r.status === 400) errorMsg = "请求无效：请检查模型参数配置。";
+                    throw new Error(errorMsg);
+                }
+                return r.json();
+            }).then(res => {
+                try {
+                    let rawContent = res.choices[0].message.content;
+                    rawContent = rawContent.replace(/```json|```/g, "").trim();
+                    const aiResult = JSON.parse(rawContent);
+                    
+                    // 更新全局数据
+                    brainstormData.summary = aiResult.summary || "无总结内容";
+                    brainstormData.keywords = aiResult.keywords || [];
+                    
+                    // 追加到全量数据中
+                    brainstormData.thoughts.push({
+                        text: content,
+                        summary: aiResult.summary,
+                        keywords: aiResult.keywords
+                    });
+                    
+                    // 更新全量关键词
+                    aiResult.keywords.forEach(kw => {
+                        if (!brainstormData.allKeywords.includes(kw)) {
+                            brainstormData.allKeywords.push(kw);
+                        }
+                    });
+
+                    // 更新关联关系
+                    if (aiResult.connections) {
+                        aiResult.connections.forEach(conn => {
+                            brainstormData.connections.push(conn);
+                        });
+                    }
+                    
+                    return aiResult;
+                } catch (parseErr) {
+                    console.error("JSON 解析失败：", res.choices[0].message.content);
+                    throw new Error("AI 返回内容不符合 JSON 格式要求。");
+                }
+            }).catch(err => {
+                console.error("AI 调用详细错误：", err);
+                throw err;
+            });
+        };
+
+        // 通用气泡渲染函数（仅从 brainstormData 取数，绘制气泡与连线）
+        const renderBubbles = () => {
+            const container = document.getElementById('bubbleContainer');
+            const svgLayer = document.getElementById('bubbleSvg');
+            
+            // 1. 清理并重新渲染
+            const oldBubbles = container.querySelectorAll('.bubble');
+            oldBubbles.forEach(b => b.remove());
+            svgLayer.innerHTML = '';
+
+            const bubbleMap = {}; 
+            const placedPositions = []; // 存储已放置气泡的位置和尺寸
+
+            // 碰撞检测函数
+            const isOverlapping = (x, y, w, h) => {
+                const padding = 20; // 气泡间的间距
+                for (const pos of placedPositions) {
+                    if (!(x + w + padding < pos.x || 
+                          x > pos.x + pos.w + padding || 
+                          y + h + padding < pos.y || 
+                          y > pos.y + pos.h + padding)) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+
+            // 2. 渲染所有关键词气泡
+            brainstormData.allKeywords.forEach(word => {
+                const bubble = document.createElement('div');
+                bubble.className = 'bubble';
+                bubble.textContent = word;
+                
+                // 先临时挂载以获取宽高
+                bubble.style.visibility = 'hidden';
+                container.appendChild(bubble);
+                const w = bubble.offsetWidth;
+                const h = bubble.offsetHeight;
+
+                // 尝试寻找非重叠位置
+                let x, y;
+                let attempts = 0;
+                const maxAttempts = 50;
+                const containerWidth = container.offsetWidth;
+                const containerHeight = container.offsetHeight;
+
+                do {
+                    x = Math.random() * (containerWidth - w - 40) + 20;
+                    y = Math.random() * (containerHeight - h - 40) + 20;
+                    attempts++;
+                } while (isOverlapping(x, y, w, h) && attempts < maxAttempts);
+
+                bubble.style.left = `${x}px`;
+                bubble.style.top = `${y}px`;
+                bubble.style.visibility = 'visible';
+                bubble.style.animationDelay = `${Math.random() * 2}s`;
+                
+                bubble.onclick = () => {
+                    const input = document.getElementById('ideaInput');
+                    input.value = (input.value ? input.value + ' ' : '') + word;
+                    input.focus();
+                };
+
+                placedPositions.push({ x, y, w, h });
+                bubbleMap[word] = bubble;
+            });
+
+            // 3. 绘制连线
+            setTimeout(() => {
+                const rect = container.getBoundingClientRect();
+                
+                brainstormData.connections.forEach(conn => {
+                    const sourceEl = bubbleMap[conn.source];
+                    const targetEl = bubbleMap[conn.target];
+                    
+                    if (sourceEl && targetEl) {
+                        const sX = parseFloat(sourceEl.style.left) + sourceEl.offsetWidth / 2;
+                        const sY = parseFloat(sourceEl.style.top) + sourceEl.offsetHeight / 2;
+                        const tX = parseFloat(targetEl.style.left) + targetEl.offsetWidth / 2;
+                        const tY = parseFloat(targetEl.style.top) + targetEl.offsetHeight / 2;
+                        
+                        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                        line.setAttribute("x1", sX);
+                        line.setAttribute("y1", sY);
+                        line.setAttribute("x2", tX);
+                        line.setAttribute("y2", tY);
+                        line.setAttribute("class", "connection-line");
+                        svgLayer.appendChild(line);
+                    }
+                });
+            }, 100); // 稍微延迟等待布局完成
+        };
+
+        // 通用脑图/总结渲染函数（展示最新 AI 总结与气泡罗列）
+        const renderMindmap = () => {
+            const container = document.getElementById('mindmapContainer');
+            
+            const card = document.createElement('div');
+            card.className = 'summary-card';
+            
+            const content = document.createElement('div');
+            content.className = 'summary-content';
+            content.textContent = brainstormData.summary;
+            card.appendChild(content);
+            
+            const tagsContainer = document.createElement('div');
+            tagsContainer.className = 'card-tags';
+            
+            brainstormData.keywords.forEach(word => {
+                const tag = document.createElement('div');
+                tag.className = 'card-tag';
+                tag.textContent = word;
+                tagsContainer.appendChild(tag);
+            });
+            
+            card.appendChild(tagsContainer);
+            
+            // 每次渲染新卡片时插入到顶部
+            if (container.firstChild) {
+                container.insertBefore(card, container.firstChild);
+            } else {
+                container.appendChild(card);
+            }
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const ideaInput = document.getElementById('ideaInput');
+            const submitBtn = document.getElementById('submitBtn');
+            const thoughtHistory = document.getElementById('thoughtHistory');
+            
+            const visualPlaceholder = document.getElementById('visualPlaceholder');
+            const visualResult = document.getElementById('visualResult');
+            const aiSummary = document.getElementById('aiSummary');
+            const aiKeywords = document.getElementById('aiKeywords');
+            const loadingOverlay = document.getElementById('loadingOverlay');
+
+            submitBtn.addEventListener('click', async () => {
+                const text = ideaInput.value.trim();
+                
+                if (text) {
+                    console.log("正在处理新灵感:", text);
+                    
+                    // 显示加载状态
+                    loadingOverlay.style.display = 'flex';
+                    submitBtn.disabled = true;
+
+                    try {
+                        // 调用通用AI函数
+                        const result = await callAIModel(text);
+                        
+                        // 切换显示区域
+                        displayResults();
+                        
+                        // 调用通用渲染函数更新可视化
+                        renderBubbles();
+                        renderMindmap();
+                        
+                        // 添加到历史
+                        addThoughtToHistory(text);
+                        
+                        // 清空输入
+                        ideaInput.value = '';
+                    } catch (err) {
+                        console.error(err);
+                        alert("AI 总结失败，请检查 API KEY 或网络连接！");
+                    } finally {
+                        loadingOverlay.style.display = 'none';
+                        submitBtn.disabled = false;
+                    }
+                } else {
+                    alert("请输入内容后再提交！");
+                }
+            });
+
+            function displayResults() {
+                // 切换显示区域
+                visualPlaceholder.style.display = 'none';
+                visualResult.style.display = 'block';
+            }
+
+            function addThoughtToHistory(content) {
+                const thought = brainstormData.thoughts[brainstormData.thoughts.length - 1];
+                
+                const div = document.createElement('div');
+                div.className = 'thought-item expanded'; // 默认新生成的为展开状态，也可以去掉 expanded 默认为折叠
+                
+                // 1. 标题部分（原始想法）
+                const originalText = document.createElement('div');
+                originalText.className = 'original-text';
+                originalText.textContent = content;
+                div.appendChild(originalText);
+
+                // 2. 详情部分（AI总结与标签）
+                const details = document.createElement('div');
+                details.className = 'thought-details';
+
+                if (thought) {
+                    const summaryEl = document.createElement('div');
+                    summaryEl.className = 'summary-text';
+                    summaryEl.textContent = `📝 总结：${thought.summary}`;
+                    details.appendChild(summaryEl);
+
+                    const tagsEl = document.createElement('div');
+                    tagsEl.className = 'thought-tags';
+                    thought.keywords.forEach(kw => {
+                        const tag = document.createElement('span');
+                        tag.className = 'thought-tag';
+                        tag.textContent = `#${kw}`;
+                        tagsEl.appendChild(tag);
+                    });
+                    details.appendChild(tagsEl);
+                }
+                
+                div.appendChild(details);
+
+                // 点击切换展开/折叠
+                div.onclick = (e) => {
+                    div.classList.toggle('expanded');
+                };
+
+                const firstChild = thoughtHistory.querySelector('.thought-item');
+                if (firstChild) {
+                    thoughtHistory.insertBefore(div, firstChild);
+                } else {
+                    thoughtHistory.appendChild(div);
+                }
+            }
+        });
+    </script>
+</body>
+</html>

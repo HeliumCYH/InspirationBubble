@@ -1,0 +1,8 @@
+# 编辑器配置
+.idea/
+.vscode/
+*.suo
+*.sln
+*.qoder
+# 视频内容
+*.mp4

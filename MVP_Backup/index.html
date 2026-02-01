@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>灵感气泡 - AI 头脑风暴辅助工具</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header>
+        <h1>Inspiration Bubble 🫧</h1>
+        <div class="user-info" style="display: flex; align-items: center;">
+            <span>头脑风暴模式</span>
+            <button id="clearCacheBtn" class="clear-btn">清空历史/缓存</button>
+        </div>
+    </header>
+
+    <main class="container">
+        <!-- 输入区 -->
+        <section class="input-section">
+            <h2>想法输入 (Input)</h2>
+            <div class="input-container">
+                <textarea id="ideaInput" placeholder="在此输入你的想法、关键词或问题..."></textarea>
+                <div style="display: flex; gap: 10px;">
+                    <button id="submitBtn" style="flex-grow: 1;">捕捉灵感</button>
+                    <button id="voiceBtn" title="语音录入" class="voice-btn">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+                    </button>
+                </div>
+                <div class="thought-history" id="thoughtHistory">
+                    <p style="color: #999; font-size: 0.8rem; margin-bottom: 10px;">最近录入的灵感：</p>
+                    <!-- 历史记录将显示在这里 -->
+                </div>
+            </div>
+        </section>
+
+        <!-- 可视化展示区 -->
+        <section class="visual-section" id="visualSection">
+            <h2>思维总结 (Visualization)</h2>
+            <!-- 初始占位 -->
+            <div class="visual-placeholder" id="visualPlaceholder">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 2v8"></path>
+                    <path d="m16.2 4.2-2.8 2.8"></path>
+                    <path d="M22 12h-8"></path>
+                    <path d="m19.8 16.2-2.8-2.8"></path>
+                    <path d="M12 22v-8"></path>
+                    <path d="m7.8 19.8 2.8-2.8"></path>
+                    <path d="M2 12h8"></path>
+                    <path d="m4.2 7.8 2.8 2.8"></path>
+                </svg>
+                <p>提交想法后，AI 将在此生成总结与关键词</p>
+            </div>
+            <!-- 结果展示 -->
+            <div class="visual-result" id="visualResult">
+                <div class="visual-title">知识关联图谱</div>
+                <div class="bubble-container" id="bubbleContainer">
+                    <svg class="bubble-svg-layer" id="bubbleSvg"></svg>
+                    <!-- 气泡将在此动态生成 -->
+                </div>
+                
+                <div class="summary-title">灵感深度解析</div>
+                <div class="mindmap-container" id="mindmapContainer">
+                    <!-- 脑图将在此动态生成 -->
+                </div>
+                <div class="summary-box" id="aiSummary"></div>
+                <div class="keyword-group" id="aiKeywords"></div>
+            </div>
+            <!-- 加载层 -->
+            <div class="loading-overlay" id="loadingOverlay">
+                <div class="spinner"></div>
+                <span>AI 正在思考中...</span>
+            </div>
+        </section>
+
+        <!-- AI 灵感推荐区 -->
+        <section class="ai-section">
+            <h2>AI 灵感推荐 (AI Recommendations)</h2>
+            <div class="ai-content" id="inspirationContainer">
+                <div style="color: #999; text-align: center; margin-top: 20px;">
+                    暂无推荐灵感，请先输入想法。
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script src="api.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
