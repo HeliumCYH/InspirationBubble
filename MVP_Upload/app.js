@@ -305,7 +305,9 @@ const applyMindMapLayout = () => {
     };
 
     // 执行自动折叠优化
-    performAutoCollapse();
+    // performAutoCollapse(); // 暂时禁用
+    // 强制展开所有节点以修复不显示的 bug
+    keywords.forEach(k => { if (typeof k !== 'string') k.isCollapsed = false; });
     // -----------------------------------------------
 
     // 1. 构建树结构并标准化节点

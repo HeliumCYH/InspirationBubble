@@ -13,7 +13,11 @@ app.use(express.static('.')); // 静态文件服务
 // Proxy for ModelScope AI
 app.post('/api/ai', async (req, res) => {
     try {
-        const response = await axios.post('https://api-inference.modelscope.cn/v1/chat/completions', req.body, {
+        const payload = {
+            ...req.body,
+            enable_thinking: false
+        };
+        const response = await axios.post('https://api-inference.modelscope.cn/v1/chat/completions', payload, {
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${process.env.MODEL_SCOPE_KEY}`
@@ -21,7 +25,7 @@ app.post('/api/ai', async (req, res) => {
         });
         res.json(response.data);
     } catch (error) {
-        console.error('AI Proxy Error:', error.response ? error.response.data : error.message);
+        console.error('AI Proxy Error:', error.response ? error.response.data : error.message, req.body);
         res.status(error.response ? error.status : 500).json({ error: 'AI Request Failed' });
     }
 });

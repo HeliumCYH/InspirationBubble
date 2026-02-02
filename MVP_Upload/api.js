@@ -60,7 +60,7 @@ async function callAIModel(content, brainstormData) {
                     messages: [{ role: "user", content: prompt }],
                     max_tokens: 4096,
                     temperature: 0.5,
-                    enable_thinking: false,
+                    // enable_thinking: false, // Removed to avoid invalid_parameter_error
                     response_format: { "type": "json_object" }
                 })
             });
@@ -99,7 +99,12 @@ async function callAIModel(content, brainstormData) {
 /**
  * Calls the search API via the backend proxy
  */
-async function callSearchAPI(keyword) {
+async function callSearchAPI(keywordInput) {
+    // Handle both string and object inputs (e.g. {name: "keyword"})
+    const keyword = (typeof keywordInput === 'object' && keywordInput !== null && keywordInput.name) 
+        ? keywordInput.name 
+        : keywordInput;
+
     try {
         const query = encodeURIComponent(keyword + " 头脑风暴 创意灵感 行业案例");
         const response = await fetch(`${BACKEND_URL}/api/search?q=${query}&num=5`);
