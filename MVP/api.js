@@ -8,17 +8,39 @@ const BACKEND_URL = 'http://localhost:3000';
  * Calls the AI model via the backend proxy
  */
 async function callAIModel(content, brainstormData) {
-    const existingKeywords = brainstormData.allKeywords.join(", ");
-    const prompt = `你是一个头脑风暴助手。任务：
-1. 请对以下内容进行简洁总结（100字以内）。
-2. 提取3-5个核心关键词。
-3. 建立这些关键词之间，以及它们与现有关键词 [${existingKeywords}] 之间的逻辑联系（关联对），并给出每对联系的紧密程度（strength, 1-10分，10分为最紧密）。
-要求：必须严格以 JSON 格式返回，不包含 Markdown 代码块。
-JSON 结构：{
-  "summary": "总结文字", 
-  "keywords": ["关键词1", "关键词2", ...], 
-  "connections": [{"source": "关键词1", "target": "关键词2", "strength": 8}, ...]
+    const existingKeywords = brainstormData.allKeywords.map(k => typeof k === 'string' ? k : k.name).join(", ");
+    const corePoints = brainstormData.allKeywords.filter(k => typeof k !== 'string' && k.isCore).map(k => k.name).join(", ");
+    
+    const prompt = `你是专业的讨论内容梳理助手，需处理各类口头 / 文字讨论内容，严格基于原文完成核心信息提取与层级化思维导图生成，全程遵循以下规则，无任何引申、杜撰、补充，所有内容均来自输入的发言 / 讨论原文：
+
+## 核心规则：
+1. **关键词提取**：先从讨论内容中提取无冗余的核心关键词 / 关键信息点，拒绝无关词汇，不遗漏核心内容。
+2. **逻辑层级梳理**：自动梳理信息的逻辑层级关系。
+   - 根节点（Level 1）：本次讨论的核心主题（从原文提取，不自定义）。
+   - 一级节点（Level 2）：讨论的核心板块 / 维度。
+   - 二级及以下节点（Level 3+）：对应板块的细分关键词 / 信息点。
+   - 层级根据内容自然划分，不强行嵌套。
+3. **结构化生成**：按「根节点→一级节点→二级节点→…」的结构生成，节点内容仅为提取的关键词 / 简洁信息点，无需长句描述。
+4. **严禁加工**：无中生有、不做任何引申思考，不添加原文未提及的内容，不做总结性加工，仅做信息的层级化提炼与呈现。
+
+## 技术要求：
+1. **输出格式**：必须严格以 JSON 格式返回，不包含 Markdown 代码块。
+2. **跨灵感关联**：在保证上述规则的前提下，尝试建立本次提取的关键词与现有关键词 [${existingKeywords}] 之间的逻辑联系（connections）。
+3. **核心关注**：用户特别关注的核心论点是 [${corePoints}]，请在提取关键词时重点围绕这些点展开。
+
+## JSON 结构要求：
+{
+  "summary": "根节点内容（讨论核心主题）", 
+  "keywords": [
+    {"name": "关键词1", "level": 1, "parent": null},
+    {"name": "关键词2", "level": 2, "parent": "关键词1"},
+    ...
+  ], 
+  "connections": [
+    {"source": "关键词1", "target": "关键词2", "strength": 8}
+  ]
 }
+注意：connections 中的 strength 为 1-10 的紧密程度。
 
 内容：${content}`;
 

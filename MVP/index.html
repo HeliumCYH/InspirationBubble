@@ -16,31 +16,62 @@
     </header>
 
     <main class="container">
-        <!-- 输入区 -->
-        <section class="input-section">
-            <h2>想法输入 (Input)</h2>
-            <div class="input-container">
-                <textarea id="ideaInput" placeholder="在此输入你的想法、关键词或问题..."></textarea>
-                <div style="display: flex; gap: 10px;">
-                    <button id="submitBtn" style="flex-grow: 1;">捕捉灵感</button>
-                    <button id="voiceBtn" title="语音录入" class="voice-btn">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+        <!-- 左侧栏容器 -->
+        <aside class="sidebar-left">
+            <!-- 输入区 -->
+            <section class="input-section">
+                <div class="section-header">
+                    <h2>想法输入 (Input)</h2>
+                    <button class="toggle-btn" title="折叠/展开">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
                     </button>
                 </div>
-                <div class="thought-history" id="thoughtHistory">
-                    <p style="color: #999; font-size: 0.8rem; margin-bottom: 10px;">最近录入的灵感：</p>
-                    <!-- 历史记录将显示在这里 -->
+                <div class="section-content">
+                    <div class="input-container">
+                        <textarea id="ideaInput" placeholder="在此输入你的想法、关键词或问题..."></textarea>
+                        <div style="display: flex; gap: 10px;">
+                            <button id="submitBtn" style="flex-grow: 1;">捕捉灵感</button>
+                        </div>
+                    </div>
                 </div>
-            </div>
-        </section>
+            </section>
 
-        <!-- AI 纪要区 -->
-        <section class="meeting-section">
-            <h2>AI 纪要 (AI Meeting Minutes)</h2>
-            <div id="meetingContent" class="meeting-content">
-                <p style="color: #999; font-size: 0.9rem; text-align: center; margin-top: 20px;">点击麦克风开始录制，语音内容将实时转化为文字并显示在这里。</p>
-            </div>
-        </section>
+            <!-- 历史灵感区 (拆分为独立栏目) -->
+            <section class="history-section">
+                <div class="section-header">
+                    <h2>最近灵感 (History)</h2>
+                    <button class="toggle-btn" title="折叠/展开">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                </div>
+                <div class="section-content">
+                    <div class="thought-history" id="thoughtHistory">
+                        <p style="color: #999; font-size: 0.8rem; margin-bottom: 10px;">最近录入的灵感：</p>
+                        <!-- 历史记录将显示在这里 -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- AI 纪要区 -->
+            <section class="meeting-section">
+                <div class="section-header">
+                    <h2>AI 纪要 (AI Meeting Minutes)</h2>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <button id="voiceBtn" title="语音录入" class="voice-btn">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+                        </button>
+                        <button class="toggle-btn" title="折叠/展开">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="section-content">
+                    <div id="meetingContent" class="meeting-content">
+                        <p style="color: #999; font-size: 0.9rem; text-align: center; margin-top: 20px;">点击麦克风开始录制，语音内容将实时转化为文字并显示在这里。</p>
+                    </div>
+                </div>
+            </section>
+        </aside>
 
         <!-- 可视化展示区 -->
         <section class="visual-section" id="visualSection">
@@ -63,8 +94,10 @@
             <div class="visual-result" id="visualResult">
                 <div class="visual-title">知识关联图谱</div>
                 <div class="bubble-container" id="bubbleContainer">
-                    <svg class="bubble-svg-layer" id="bubbleSvg"></svg>
-                    <!-- 气泡将在此动态生成 -->
+                    <div class="bubble-viewport" id="bubbleViewport">
+                        <svg class="bubble-svg-layer" id="bubbleSvg"></svg>
+                        <!-- 气泡将在此动态生成 -->
+                    </div>
                 </div>
                 
                 <div class="summary-title">灵感深度解析</div>

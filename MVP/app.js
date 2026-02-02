@@ -10,7 +10,12 @@ const brainstormData = {
     summary: "",
     keywords: [],
     inspiration: [],
-    voiceTextHistory: []
+    voiceTextHistory: [],
+    zoom: {
+        scale: 1,
+        min: 0.2,
+        max: 3
+    }
 };
 
 // --- Local Storage Logic ---
@@ -83,39 +88,161 @@ const renderInspiration = () => {
     });
 };
 
-const renderBubbles = () => {
+// --- Context Menu Logic ---
+let activeContextMenu = null;
+
+const hideContextMenu = () => {
+    if (activeContextMenu) {
+        activeContextMenu.style.display = 'none';
+    }
+};
+
+const showContextMenu = (x, y, keywordName) => {
+    hideContextMenu();
+    
+    let menu = document.getElementById('bubbleContextMenu');
+    if (!menu) {
+        menu = document.createElement('div');
+        menu.id = 'bubbleContextMenu';
+        menu.className = 'context-menu';
+        document.body.appendChild(menu);
+    }
+    
+    const kw = brainstormData.allKeywords.find(k => (typeof k === 'string' ? k : k.name) === keywordName);
+    const isCore = kw && typeof kw !== 'string' ? kw.isCore : false;
+    
+    menu.innerHTML = `
+        <div class="context-menu-item" id="menu-toggle-core">
+            <span>${isCore ? '📌 取消核心' : '⭐ 设为核心'}</span>
+        </div>
+        <div class="context-menu-item delete" id="menu-delete-kw">
+            <span>🗑️ 删除气泡</span>
+        </div>
+    `;
+    
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
+    menu.style.display = 'block';
+    activeContextMenu = menu;
+    
+    // Bind actions
+    document.getElementById('menu-toggle-core').onclick = () => {
+        const kwIndex = brainstormData.allKeywords.findIndex(k => (typeof k === 'string' ? k : k.name) === keywordName);
+        if (kwIndex !== -1) {
+            let k = brainstormData.allKeywords[kwIndex];
+            if (typeof k === 'string') {
+                k = { name: k, level: 3, parent: null, isCore: true };
+                brainstormData.allKeywords[kwIndex] = k;
+            } else {
+                k.isCore = !k.isCore;
+            }
+            
+            // Sync with current summary card keywords if present
+            const currentKw = brainstormData.keywords.find(kw => (typeof kw === 'string' ? kw : kw.name) === keywordName);
+            if (currentKw && typeof currentKw !== 'string') {
+                currentKw.isCore = k.isCore;
+            }
+            
+            saveToLocalStorage();
+            renderBubbles(false); 
+            renderMindmap(); // Refresh to reflect any potential visual changes
+        }
+        hideContextMenu();
+    };
+    
+    document.getElementById('menu-delete-kw').onclick = () => {
+        if (confirm(`确定要删除关键词 "${keywordName}" 及其所有子节点吗？`)) {
+            const toDelete = new Set([keywordName]);
+            
+            // 递归查找所有子节点
+            const findDescendants = (parentId) => {
+                brainstormData.allKeywords.forEach(k => {
+                    const name = typeof k === 'string' ? k : k.name;
+                    const parent = typeof k === 'string' ? null : k.parent;
+                    if (parent === parentId && !toDelete.has(name)) {
+                        toDelete.add(name);
+                        findDescendants(name);
+                    }
+                });
+            };
+            findDescendants(keywordName);
+
+            // 执行删除
+            brainstormData.allKeywords = brainstormData.allKeywords.filter(k => !toDelete.has(typeof k === 'string' ? k : k.name));
+            brainstormData.keywords = brainstormData.keywords.filter(k => !toDelete.has(typeof k === 'string' ? k : k.name));
+            brainstormData.connections = brainstormData.connections.filter(c => !toDelete.has(c.source) && !toDelete.has(c.target));
+            
+            saveToLocalStorage();
+            renderBubbles(false);
+            renderMindmap();
+        }
+        hideContextMenu();
+    };
+};
+
+// Global click to hide context menu
+document.addEventListener('click', hideContextMenu);
+document.addEventListener('contextmenu', (e) => {
+    if (!e.target.closest('.bubble')) hideContextMenu();
+});
+
+const renderBubbles = (runSimulation = true) => {
     const container = document.getElementById('bubbleContainer');
+    const viewport = document.getElementById('bubbleViewport');
     const svgLayer = document.getElementById('bubbleSvg');
-    if (!container || !svgLayer) return;
+    if (!container || !viewport || !svgLayer) return;
+    
+    // 应用当前缩放
+    viewport.style.transform = `scale(${brainstormData.zoom.scale})`;
     
     const keywords = brainstormData.allKeywords;
     if (keywords.length === 0) {
-        container.querySelectorAll('.bubble').forEach(b => b.remove());
+        viewport.querySelectorAll('.bubble').forEach(b => b.remove());
         svgLayer.innerHTML = '';
         return;
     }
 
     // --- Identify nodes to add, keep, or remove ---
-    const currentBubbles = Array.from(container.querySelectorAll('.bubble:not(.exiting)'));
+    const currentBubbles = Array.from(viewport.querySelectorAll('.bubble:not(.exiting)'));
     const currentWords = currentBubbles.map(b => b.dataset.word);
     
     // Nodes to remove
     currentBubbles.forEach(bubble => {
-        if (!keywords.includes(bubble.dataset.word)) {
+        if (!keywords.find(k => (typeof k === 'string' ? k : k.name) === bubble.dataset.word)) {
             bubble.classList.add('exiting');
             setTimeout(() => bubble.remove(), 500);
         }
     });
 
-    const nodes = keywords.map(word => {
-        const existingBubble = currentBubbles.find(b => b.dataset.word === word);
+    const nodes = keywords.map(kw => {
+        const name = typeof kw === 'string' ? kw : kw.name;
+        const level = typeof kw === 'string' ? 3 : (kw.level || 3);
+        const isCore = typeof kw === 'string' ? false : (kw.isCore || false);
+        
+        const existingBubble = currentBubbles.find(b => b.dataset.word === name);
+        
+        // 优先使用持久化的坐标，如果没有则随机初始化或从现有气泡读取
+        let initialX, initialY;
+        if (typeof kw !== 'string' && kw.x !== undefined && kw.y !== undefined) {
+            initialX = kw.x;
+            initialY = kw.y;
+        } else if (existingBubble) {
+            initialX = parseFloat(existingBubble.style.left) + existingBubble.offsetWidth / 2;
+            initialY = parseFloat(existingBubble.style.top) + existingBubble.offsetHeight / 2;
+        } else {
+            initialX = Math.random() * container.offsetWidth;
+            initialY = Math.random() * container.offsetHeight;
+        }
+
         return {
-            id: word,
-            x: existingBubble ? parseFloat(existingBubble.style.left) + existingBubble.offsetWidth / 2 : Math.random() * container.offsetWidth,
-            y: existingBubble ? parseFloat(existingBubble.style.top) + existingBubble.offsetHeight / 2 : Math.random() * container.offsetHeight,
+            id: name,
+            level: level,
+            isCore: isCore,
+            x: initialX,
+            y: initialY,
             vx: 0,
             vy: 0,
-            isNew: !currentWords.includes(word)
+            isNew: !currentWords.includes(name)
         };
     });
 
@@ -126,62 +253,74 @@ const renderBubbles = () => {
     const bubbleMap = {};
 
     // --- Force-Directed Simulation (Maintain User Logic) ---
-    const iterations = 150;
-    const k = Math.sqrt((container.offsetWidth * container.offsetHeight) / nodes.length) * 0.8;
-    const repulsionBase = k * k;
-    const attractionBase = k;
+    if (runSimulation) {
+        const iterations = 150;
+        const k = Math.sqrt((container.offsetWidth * container.offsetHeight) / nodes.length) * 0.4;
+        const repulsionBase = k * k;
+        const attractionBase = k;
 
-    for (let i = 0; i < iterations; i++) {
-        for (let i1 = 0; i1 < nodes.length; i1++) {
-            for (let i2 = i1 + 1; i2 < nodes.length; i2++) {
-                const n1 = nodes[i1], n2 = nodes[i2];
-                const dx = n1.x - n2.x;
-                const dy = n1.y - n2.y;
-                const distSq = dx * dx + dy * dy + 0.01;
-                const dist = Math.sqrt(distSq);
-                const force = repulsionBase / dist;
-                const fx = (dx / dist) * force;
-                const fy = (dy / dist) * force;
-                n1.vx += fx; n1.vy += fy;
-                n2.vx -= fx; n2.vy -= fy;
+        for (let i = 0; i < iterations; i++) {
+            for (let i1 = 0; i1 < nodes.length; i1++) {
+                for (let i2 = i1 + 1; i2 < nodes.length; i2++) {
+                    const n1 = nodes[i1], n2 = nodes[i2];
+                    const dx = n1.x - n2.x;
+                    const dy = n1.y - n2.y;
+                    const distSq = dx * dx + dy * dy + 0.01;
+                    const dist = Math.sqrt(distSq);
+                    const force = repulsionBase / dist;
+                    const fx = (dx / dist) * force;
+                    const fy = (dy / dist) * force;
+                    n1.vx += fx; n1.vy += fy;
+                    n2.vx -= fx; n2.vy -= fy;
+                }
             }
+
+            connections.forEach(conn => {
+                const n1 = nodeMap[conn.source];
+                const n2 = nodeMap[conn.target];
+                if (n1 && n2) {
+                    const dx = n1.x - n2.x;
+                    const dy = n1.y - n2.y;
+                    const distSq = dx * dx + dy * dy + 0.01;
+                    const dist = Math.sqrt(distSq);
+                    const strength = conn.strength || 5;
+                    const force = (distSq / attractionBase) * (strength / 10);
+                    const fx = (dx / dist) * force;
+                    const fy = (dy / dist) * force;
+                    n1.vx -= fx; n1.vy -= fy;
+                    n2.vx += fx; n2.vy += fy;
+                }
+            });
+
+            const centerX = container.offsetWidth / 2;
+            const centerY = container.offsetHeight / 2;
+            nodes.forEach(n => {
+                const dx = n.x - centerX;
+                const dy = n.y - centerY;
+                n.vx -= dx * 0.05;
+                n.vy -= dy * 0.05;
+            });
+
+            nodes.forEach(n => {
+                n.x += n.vx * 0.1;
+                n.y += n.vy * 0.1;
+                n.vx *= 0.5;
+                n.vy *= 0.5;
+                const padding = 40;
+                n.x = Math.max(padding, Math.min(container.offsetWidth - padding, n.x));
+                n.y = Math.max(padding, Math.min(container.offsetHeight - padding, n.y));
+            });
         }
-
-        connections.forEach(conn => {
-            const n1 = nodeMap[conn.source];
-            const n2 = nodeMap[conn.target];
-            if (n1 && n2) {
-                const dx = n1.x - n2.x;
-                const dy = n1.y - n2.y;
-                const distSq = dx * dx + dy * dy + 0.01;
-                const dist = Math.sqrt(distSq);
-                const strength = conn.strength || 5;
-                const force = (distSq / attractionBase) * (strength / 10);
-                const fx = (dx / dist) * force;
-                const fy = (dy / dist) * force;
-                n1.vx -= fx; n1.vy -= fy;
-                n2.vx += fx; n2.vy += fy;
+        
+        // 模拟结束后，同步坐标到全局数据
+        nodes.forEach(node => {
+            const kw = brainstormData.allKeywords.find(k => (typeof k === 'string' ? k : k.name) === node.id);
+            if (kw && typeof kw !== 'string') {
+                kw.x = node.x;
+                kw.y = node.y;
             }
         });
-
-        const centerX = container.offsetWidth / 2;
-        const centerY = container.offsetHeight / 2;
-        nodes.forEach(n => {
-            const dx = n.x - centerX;
-            const dy = n.y - centerY;
-            n.vx -= dx * 0.05;
-            n.vy -= dy * 0.05;
-        });
-
-        nodes.forEach(n => {
-            n.x += n.vx * 0.1;
-            n.y += n.vy * 0.1;
-            n.vx *= 0.5;
-            n.vy *= 0.5;
-            const padding = 40;
-            n.x = Math.max(padding, Math.min(container.offsetWidth - padding, n.x));
-            n.y = Math.max(padding, Math.min(container.offsetHeight - padding, n.y));
-        });
+        saveToLocalStorage();
     }
 
     // --- Rendering with Transitions ---
@@ -205,15 +344,31 @@ const renderBubbles = () => {
         });
     };
 
+    // Helper to find all descendants of a bubble
+    const getAllDescendants = (parentId) => {
+        let descendants = [];
+        brainstormData.allKeywords.forEach(k => {
+            if (typeof k !== 'string' && k.parent === parentId) {
+                const childEl = viewport.querySelector(`.bubble[data-word="${k.name}"]`);
+                if (childEl) {
+                    descendants.push(childEl);
+                    descendants = descendants.concat(getAllDescendants(k.name));
+                }
+            }
+        });
+        return descendants;
+    };
+
     nodes.forEach(node => {
         let bubble = currentBubbles.find(b => b.dataset.word === node.id);
         
         if (!bubble) {
             bubble = document.createElement('div');
-            bubble.className = 'bubble entering';
+            bubble.className = `bubble entering level-${node.level}`;
+            if (node.isCore) bubble.classList.add('is-core');
             bubble.dataset.word = node.id;
             bubble.textContent = node.id;
-            container.appendChild(bubble);
+            viewport.appendChild(bubble);
             
             // Trigger entering animation
             requestAnimationFrame(() => {
@@ -221,21 +376,51 @@ const renderBubbles = () => {
             });
 
             // Draggable Logic
-            let isDragging = false, startX, startY;
+            let isDragging = false, startX, startY, moved = false;
+            let descendants = [], descInitPos = [];
+
             bubble.addEventListener('mousedown', (e) => {
                 isDragging = true;
+                moved = false;
                 bubble.classList.add('dragging');
                 bubble.style.animation = 'none';
-                startX = e.clientX - parseFloat(bubble.style.left);
-                startY = e.clientY - parseFloat(bubble.style.top);
+                
+                // 考虑缩放修正偏移
+                startX = e.clientX / brainstormData.zoom.scale - parseFloat(bubble.style.left);
+                startY = e.clientY / brainstormData.zoom.scale - parseFloat(bubble.style.top);
+                
+                // 查找所有子孙节点并记录相对位置，同时添加 dragging 类以禁用过渡
+                descendants = getAllDescendants(node.id);
+                descInitPos = descendants.map(d => {
+                    d.classList.add('dragging');
+                    d.style.animation = 'none';
+                    return {
+                        el: d,
+                        relX: parseFloat(d.style.left) - parseFloat(bubble.style.left),
+                        relY: parseFloat(d.style.top) - parseFloat(bubble.style.top)
+                    };
+                });
+                
                 e.stopPropagation();
             });
             document.addEventListener('mousemove', (e) => {
                 if (!isDragging) return;
-                let newX = e.clientX - startX, newY = e.clientY - startY;
+                moved = true;
+                let newX = e.clientX / brainstormData.zoom.scale - startX, 
+                    newY = e.clientY / brainstormData.zoom.scale - startY;
+                
+                // 限制父节点边界
                 newX = Math.max(0, Math.min(newX, container.offsetWidth - bubble.offsetWidth));
                 newY = Math.max(0, Math.min(newY, container.offsetHeight - bubble.offsetHeight));
+                
                 bubble.style.left = `${newX}px`; bubble.style.top = `${newY}px`;
+                
+                // 同步更新所有子孙节点位置
+                descInitPos.forEach(pos => {
+                    pos.el.style.left = `${newX + pos.relX}px`;
+                    pos.el.style.top = `${newY + pos.relY}px`;
+                });
+                
                 drawConnections();
             });
             document.addEventListener('mouseup', () => {
@@ -243,6 +428,28 @@ const renderBubbles = () => {
                     isDragging = false;
                     bubble.classList.remove('dragging');
                     bubble.style.animation = 'float 5s ease-in-out infinite';
+                    
+                    // 同步父节点最终位置
+                    const parentKw = brainstormData.allKeywords.find(k => (typeof k === 'string' ? k : k.name) === node.id);
+                    if (parentKw && typeof parentKw !== 'string') {
+                        parentKw.x = parseFloat(bubble.style.left) + bubble.offsetWidth / 2;
+                        parentKw.y = parseFloat(bubble.style.top) + bubble.offsetHeight / 2;
+                    }
+
+                    // 恢复子孙节点状态并同步位置
+                    descendants.forEach(d => {
+                        d.classList.remove('dragging');
+                        d.style.animation = 'float 5s ease-in-out infinite';
+                        
+                        const childName = d.dataset.word;
+                        const childKw = brainstormData.allKeywords.find(k => (typeof k === 'string' ? k : k.name) === childName);
+                        if (childKw && typeof childKw !== 'string') {
+                            childKw.x = parseFloat(d.style.left) + d.offsetWidth / 2;
+                            childKw.y = parseFloat(d.style.top) + d.offsetHeight / 2;
+                        }
+                    });
+                    
+                    saveToLocalStorage();
                 }
             });
 
@@ -255,14 +462,24 @@ const renderBubbles = () => {
                 document.querySelectorAll(`.card-tag`).forEach(tag => tag.classList.remove('highlight'));
             });
 
-            bubble.onclick = () => {
+            bubble.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                showContextMenu(e.clientX, e.clientY, node.id);
+            });
+
+            bubble.onclick = (e) => {
+                if (moved) return;
                 const input = document.getElementById('ideaInput');
                 input.value = (input.value ? input.value + ' ' : '') + node.id;
                 input.focus();
             };
+        } else {
+            // 更新层级和核心状态
+            bubble.className = `bubble level-${node.level}`;
+            if (node.isCore) bubble.classList.add('is-core');
         }
         
-        // Update position (smoothly via CSS transition)
+        // Update position
         bubble.style.left = `${node.x - bubble.offsetWidth / 2}px`;
         bubble.style.top = `${node.y - bubble.offsetHeight / 2}px`;
         bubble.style.animationDelay = `${Math.random() * 2}s`;
@@ -270,11 +487,10 @@ const renderBubbles = () => {
         bubbleMap[node.id] = bubble;
     });
 
-    // 定期更新连接线，以跟随平滑移动的节点
     let connTicks = 0;
     const updateConnInterval = setInterval(() => {
         drawConnections();
-        if (++connTicks > 30) clearInterval(updateConnInterval); // 1.5s 后停止（匹配 transition 时间）
+        if (++connTicks > 30) clearInterval(updateConnInterval);
     }, 50);
 };
 
@@ -286,26 +502,69 @@ const renderMindmap = () => {
     card.className = 'summary-card';
     const content = document.createElement('div');
     content.className = 'summary-content';
-    content.textContent = brainstormData.summary;
+    content.innerHTML = `<span class="ai-label">AI 总结：</span>${brainstormData.summary}`;
     card.appendChild(content);
     
-    const tagsContainer = document.createElement('div');
-    tagsContainer.className = 'card-tags';
-    brainstormData.keywords.forEach(word => {
-        const tag = document.createElement('div');
-        tag.className = 'card-tag';
-        tag.textContent = word;
-        tag.addEventListener('mouseenter', () => {
-            document.querySelectorAll(`.bubble`).forEach(bubble => {
-                if (bubble.textContent === word) bubble.classList.add('highlight');
+    const treeContainer = document.createElement('div');
+    treeContainer.className = 'tree-container';
+    
+    // 构建树形结构
+    const buildTree = (parentId) => {
+        const children = brainstormData.keywords.filter(k => {
+            if (typeof k === 'string') return false; // 兼容旧数据
+            return k.parent === parentId || (!parentId && k.level === 1);
+        });
+        
+        if (children.length === 0) return null;
+        
+        const group = document.createElement('div');
+        group.className = 'tree-group';
+        
+        children.forEach(child => {
+            const item = document.createElement('div');
+            item.className = `tree-item level-${child.level}`;
+            
+            const tag = document.createElement('div');
+            tag.className = 'card-tag';
+            tag.textContent = child.name;
+            
+            // 同步图谱高亮
+            tag.addEventListener('mouseenter', () => {
+                document.querySelectorAll(`.bubble`).forEach(bubble => {
+                    if (bubble.dataset.word === child.name) bubble.classList.add('highlight');
+                });
             });
+            tag.addEventListener('mouseleave', () => {
+                document.querySelectorAll(`.bubble`).forEach(bubble => bubble.classList.remove('highlight'));
+            });
+            
+            item.appendChild(tag);
+            
+            const subTree = buildTree(child.name);
+            if (subTree) item.appendChild(subTree);
+            
+            group.appendChild(item);
         });
-        tag.addEventListener('mouseleave', () => {
-            document.querySelectorAll(`.bubble`).forEach(bubble => bubble.classList.remove('highlight'));
+        return group;
+    };
+    
+    // 处理可能的旧数据格式（字符串数组）
+    if (brainstormData.keywords.length > 0 && typeof brainstormData.keywords[0] === 'string') {
+        const tagsWrapper = document.createElement('div');
+        tagsWrapper.className = 'card-tags';
+        brainstormData.keywords.forEach(word => {
+            const tag = document.createElement('div');
+            tag.className = 'card-tag';
+            tag.textContent = word;
+            tagsWrapper.appendChild(tag);
         });
-        tagsContainer.appendChild(tag);
-    });
-    card.appendChild(tagsContainer);
+        treeContainer.appendChild(tagsWrapper);
+    } else {
+        const tree = buildTree(null);
+        if (tree) treeContainer.appendChild(tree);
+    }
+    
+    card.appendChild(treeContainer);
     
     if (container.firstChild) {
         container.insertBefore(card, container.firstChild);
@@ -341,7 +600,7 @@ function addThoughtToHistory(content, thoughtData, thoughtHistory) {
     thought.keywords.forEach(kw => {
         const tag = document.createElement('span');
         tag.className = 'thought-tag';
-        tag.textContent = `#${kw}`;
+        tag.textContent = `#${typeof kw === 'string' ? kw : kw.name}`;
         tagsEl.appendChild(tag);
     });
     details.appendChild(tagsEl);
@@ -375,7 +634,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (loadFromLocalStorage()) {
         if (brainstormData.thoughts.length > 0) {
             displayResults();
-            renderBubbles();
+            renderBubbles(false); // 加载时使用持久化的坐标，不重新模拟
             renderMindmap();
             renderInspiration();
             brainstormData.thoughts.forEach(t => addThoughtToHistory(t.text, t, thoughtHistory));
@@ -383,6 +642,22 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     clearCacheBtn.addEventListener('click', clearAllData);
+
+    // --- Zoom Logic ---
+    const bubbleContainer = document.getElementById('bubbleContainer');
+    bubbleContainer.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? -0.1 : 0.1;
+        const newScale = Math.max(
+            brainstormData.zoom.min,
+            Math.min(brainstormData.zoom.max, brainstormData.zoom.scale + delta)
+        );
+        
+        if (newScale !== brainstormData.zoom.scale) {
+            brainstormData.zoom.scale = newScale;
+            renderBubbles(false);
+        }
+    }, { passive: false });
 
     // --- Speech Recognition Logic (AI Meeting Minutes) ---
     const voiceBtn = document.getElementById('voiceBtn');
@@ -400,9 +675,30 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // 更新全局状态 (增量更新关键词)
             let hasNewData = false;
-            aiResult.keywords.forEach(kw => {
-                if (!brainstormData.allKeywords.includes(kw)) {
-                    brainstormData.allKeywords.push(kw);
+            aiResult.keywords.forEach(newKw => {
+                const existingIndex = brainstormData.allKeywords.findIndex(k => (typeof k === 'string' ? k : k.name) === newKw.name);
+                if (existingIndex !== -1) {
+                    const existing = brainstormData.allKeywords[existingIndex];
+                    if (typeof existing === 'string') {
+                        brainstormData.allKeywords[existingIndex] = {
+                            name: newKw.name,
+                            level: newKw.level,
+                            parent: newKw.parent,
+                            isCore: false
+                        };
+                        hasNewData = true;
+                    } else if (existing.level !== newKw.level || existing.parent !== newKw.parent) {
+                        existing.level = newKw.level;
+                        existing.parent = newKw.parent;
+                        hasNewData = true;
+                    }
+                } else {
+                    brainstormData.allKeywords.push({
+                        name: newKw.name,
+                        level: newKw.level,
+                        parent: newKw.parent,
+                        isCore: false
+                    });
                     hasNewData = true;
                 }
             });
@@ -517,6 +813,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // 板块折叠逻辑
+    const toggleBtns = document.querySelectorAll('.toggle-btn');
+    toggleBtns.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const section = btn.closest('section');
+            if (section) {
+                section.classList.toggle('collapsed');
+            }
+        });
+    });
+
     submitBtn.addEventListener('click', async () => {
         const text = ideaInput.value.trim();
         if (!text) return alert("请输入内容后再提交！");
@@ -533,8 +840,30 @@ document.addEventListener('DOMContentLoaded', () => {
             brainstormData.keywords = aiResult.keywords;
             brainstormData.thoughts.push({ text, summary: aiResult.summary, keywords: aiResult.keywords });
             
-            aiResult.keywords.forEach(kw => {
-                if (!brainstormData.allKeywords.includes(kw)) brainstormData.allKeywords.push(kw);
+            // 合并关键词，保留 isCore 状态，更新 level 和 parent
+            aiResult.keywords.forEach(newKw => {
+                const existingIndex = brainstormData.allKeywords.findIndex(k => (typeof k === 'string' ? k : k.name) === newKw.name);
+                if (existingIndex !== -1) {
+                    const existing = brainstormData.allKeywords[existingIndex];
+                    if (typeof existing === 'string') {
+                        brainstormData.allKeywords[existingIndex] = {
+                            name: newKw.name,
+                            level: newKw.level,
+                            parent: newKw.parent,
+                            isCore: false
+                        };
+                    } else {
+                        existing.level = newKw.level;
+                        existing.parent = newKw.parent;
+                    }
+                } else {
+                    brainstormData.allKeywords.push({
+                        name: newKw.name,
+                        level: newKw.level,
+                        parent: newKw.parent,
+                        isCore: false
+                    });
+                }
             });
             if (aiResult.connections) {
                 aiResult.connections.forEach(conn => brainstormData.connections.push(conn));
