@@ -2,22 +2,38 @@
  * api.js - Handles all communication with the backend API Gateway
  */
 
-const BACKEND_URL = 'http://localhost:3000';
+const BACKEND_URL = ''; // 使用相对路径，兼容魔搭创空间
 
 /**
  * Calls the AI model via the backend proxy
  */
 async function callAIModel(content, brainstormData) {
-    const existingKeywords = brainstormData.allKeywords.join(", ");
-    const prompt = `你是一个头脑风暴助手。任务：
-1. 请对以下内容进行简洁总结（100字以内）。
-2. 提取3-5个核心关键词。
-3. 建立这些关键词之间，以及它们与现有关键词 [${existingKeywords}] 之间的逻辑联系（关联对）。
-要求：必须严格以 JSON 格式返回，不包含 Markdown 代码块。
-JSON 结构：{
-  "summary": "总结文字", 
-  "keywords": ["关键词1", "关键词2", ...], 
-  "connections": [{"source": "关键词1", "target": "关键词2"}, ...]
+    const existingKeywords = brainstormData.allKeywords.map(k => typeof k === 'string' ? k : k.name).join(", ");
+    const corePoints = brainstormData.allKeywords.filter(k => typeof k !== 'string' && k.isCore).map(k => k.name).join(", ");
+    
+    const prompt = `你是专业的讨论内容梳理助手，需处理各类口头 / 文字讨论内容，严格基于原文完成核心信息提取与层级化思维导图生成。
+请直接返回 JSON 结果，严禁输出任何 Markdown 代码块或解释性文字。
+
+## 核心规则：
+1. **关键词提取**：从讨论内容中提取核心关键词，拒绝冗余，不遗漏核心点。
+2. **逻辑层级**：梳理信息层级（Level 1-3+），Level 1 为核心主题。
+3. **结构化生成**：仅包含提取的关键词，无需长句。
+4. **严禁加工**：仅提炼原文信息，不做任何引申或杜撰。
+
+## 技术要求：
+1. **跨灵感关联**：尝试建立本次关键词与现有关键词 [${existingKeywords}] 之间的联系。
+2. **核心关注**：重点围绕用户关注的核心论点 [${corePoints}] 展开。
+
+## JSON 结构要求：
+{
+  "summary": "根节点内容", 
+  "keywords": [
+    {"name": "关键词", "level": 层级, "parent": "父节点名或null"},
+    ...
+  ], 
+  "connections": [
+    {"source": "源节点", "target": "目标节点", "strength": 1-10}
+  ]
 }
 
 内容：${content}`;
@@ -29,7 +45,7 @@ JSON 结构：{
             body: JSON.stringify({
                 model: "Qwen/Qwen2.5-7B-Instruct",
                 messages: [{ role: "user", content: prompt }],
-                max_tokens: 1024,
+                max_tokens: 4096,
                 temperature: 0.5,
                 enable_thinking: false,
                 response_format: { "type": "json_object" }
