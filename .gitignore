@@ -6,3 +6,5 @@
 *.qoder
 # 视频内容
 *.mp4
+.env
+node_modules/
