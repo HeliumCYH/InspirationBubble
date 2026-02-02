@@ -2,7 +2,8 @@
  * api.js - Handles all communication with the backend API Gateway
  */
 
-const BACKEND_URL = ''; // 使用相对路径，兼容魔搭创空间
+// 自动识别环境：如果是 Live Server (5500) 则指向本地后端，否则使用相对路径 (魔搭)
+const BACKEND_URL = window.location.port === '5501' ? 'http://localhost:7860' : '';
 
 /**
  * Calls the AI model via the backend proxy
