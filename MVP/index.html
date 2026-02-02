@@ -92,7 +92,10 @@
             </div>
             <!-- 结果展示 -->
             <div class="visual-result" id="visualResult">
-                <div class="visual-title">知识关联图谱</div>
+                <div class="visual-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <div class="visual-title" style="margin-bottom: 0;">知识关联图谱</div>
+                    <button id="autoLayoutBtn" class="secondary-btn" style="padding: 5px 12px; font-size: 0.85rem; background: #f0f7ff; color: var(--primary-color); border: 1px solid #d0e3ff; border-radius: 4px; cursor: pointer;">✨ 自动排版</button>
+                </div>
                 <div class="bubble-container" id="bubbleContainer">
                     <div class="bubble-viewport" id="bubbleViewport">
                         <svg class="bubble-svg-layer" id="bubbleSvg"></svg>

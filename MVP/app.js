@@ -14,7 +14,9 @@ const brainstormData = {
     zoom: {
         scale: 1,
         min: 0.2,
-        max: 3
+        max: 3,
+        offsetX: 0, // 新增：画布平移 X
+        offsetY: 0  // 新增：画布平移 Y
     }
 };
 
@@ -186,17 +188,130 @@ document.addEventListener('contextmenu', (e) => {
     if (!e.target.closest('.bubble')) hideContextMenu();
 });
 
+/**
+ * 级联思维导图排版算法 (V2 - 增强稳定性)
+ */
+const applyMindMapLayout = () => {
+    const keywords = brainstormData.allKeywords;
+    if (keywords.length === 0) return;
+
+    // 1. 构建树结构并标准化节点
+    const nodes = keywords.map(k => {
+        if (typeof k === 'string') return { name: k, level: 3, parent: null, isCollapsed: false };
+        return { ...k, isCollapsed: k.isCollapsed || false };
+    });
+    const childrenMap = {};
+    nodes.forEach(n => {
+        if (n.parent) {
+            if (!childrenMap[n.parent]) childrenMap[n.parent] = [];
+            childrenMap[n.parent].push(n);
+        }
+    });
+
+    // 查找根节点
+    const roots = nodes.filter(n => !n.parent || !nodes.some(p => p.name === n.parent));
+
+    // 常量配置
+    const LEVEL_GAP = 250; 
+    const NODE_HEIGHT = 100; 
+
+    // 2. 递归计算每个子树所需的总高度
+    const calculateSubtreeHeight = (node) => {
+        const children = childrenMap[node.name] || [];
+        // 如果节点本身被折叠，其子树高度视为 0 (在布局中不占位)，但节点本身占位
+        if (node.isCollapsed || children.length === 0) {
+            node.subtreeHeight = NODE_HEIGHT;
+            return node.subtreeHeight;
+        }
+        let height = 0;
+        children.forEach(child => {
+            height += calculateSubtreeHeight(child);
+        });
+        node.subtreeHeight = Math.max(height, NODE_HEIGHT);
+        return node.subtreeHeight;
+    };
+
+    // 3. 递归分配坐标
+    const assignCoords = (node, minY) => {
+        node.x = 150 + (node.level - 1) * LEVEL_GAP;
+        node.y = minY + node.subtreeHeight / 2;
+        
+        // 如果折叠，停止递归分配子节点坐标
+        if (node.isCollapsed) return;
+
+        const children = childrenMap[node.name] || [];
+        let currentY = minY;
+        children.forEach(child => {
+            assignCoords(child, currentY);
+            currentY += child.subtreeHeight;
+        });
+    };
+
+    // 4. 执行计算并垂直居中
+    const container = document.getElementById('bubbleContainer');
+    let totalHeight = 0;
+    roots.forEach(root => {
+        totalHeight += calculateSubtreeHeight(root);
+    });
+    totalHeight += (roots.length - 1) * 50; // 根节点间的间距
+
+    const startY = Math.max(50, (container.offsetHeight - totalHeight) / 2);
+    let currentTotalY = startY;
+
+    roots.forEach(root => {
+        assignCoords(root, currentTotalY);
+        currentTotalY += root.subtreeHeight + 50;
+    });
+
+    // 5. 同步数据
+    keywords.forEach((original, index) => {
+        const name = typeof original === 'string' ? original : original.name;
+        const calculated = nodes.find(n => n.name === name);
+        if (calculated) {
+            if (typeof original === 'string') {
+                keywords[index] = { ...calculated, isCore: false };
+            } else {
+                original.x = calculated.x;
+                original.y = calculated.y;
+            }
+        }
+    });
+
+    // 重置画布偏移到中心
+    brainstormData.zoom.offsetX = 0;
+    brainstormData.zoom.offsetY = 0;
+
+    saveToLocalStorage();
+};
+
 const renderBubbles = (runSimulation = true) => {
     const container = document.getElementById('bubbleContainer');
     const viewport = document.getElementById('bubbleViewport');
     const svgLayer = document.getElementById('bubbleSvg');
     if (!container || !viewport || !svgLayer) return;
+
+    // 辅助函数：判断节点是否可见（祖先没有被折叠）
+    const isNodeVisible = (nodeName) => {
+        let current = brainstormData.allKeywords.find(k => (typeof k === 'string' ? k : k.name) === nodeName);
+        if (!current || typeof current === 'string') return true;
+        
+        let parentName = current.parent;
+        while (parentName) {
+            const parentNode = brainstormData.allKeywords.find(k => (typeof k === 'string' ? k : k.name) === parentName);
+            if (parentNode && typeof parentNode !== 'string' && parentNode.isCollapsed) return false;
+            parentName = (parentNode && typeof parentNode !== 'string') ? parentNode.parent : null;
+        }
+        return true;
+    };
     
-    // 应用当前缩放
-    viewport.style.transform = `scale(${brainstormData.zoom.scale})`;
+    // 应用当前缩放与位移
+    const zoom = brainstormData.zoom;
+    viewport.style.transform = `translate(${zoom.offsetX}px, ${zoom.offsetY}px) scale(${zoom.scale})`;
     
-    const keywords = brainstormData.allKeywords;
-    if (keywords.length === 0) {
+    // 过滤出当前可见的关键词
+    const visibleKeywords = brainstormData.allKeywords.filter(k => isNodeVisible(typeof k === 'string' ? k : k.name));
+    
+    if (visibleKeywords.length === 0) {
         viewport.querySelectorAll('.bubble').forEach(b => b.remove());
         svgLayer.innerHTML = '';
         return;
@@ -208,20 +323,21 @@ const renderBubbles = (runSimulation = true) => {
     
     // Nodes to remove
     currentBubbles.forEach(bubble => {
-        if (!keywords.find(k => (typeof k === 'string' ? k : k.name) === bubble.dataset.word)) {
+        if (!visibleKeywords.find(k => (typeof k === 'string' ? k : k.name) === bubble.dataset.word)) {
             bubble.classList.add('exiting');
             setTimeout(() => bubble.remove(), 500);
         }
     });
 
-    const nodes = keywords.map(kw => {
+    const nodes = visibleKeywords.map(kw => {
         const name = typeof kw === 'string' ? kw : kw.name;
         const level = typeof kw === 'string' ? 3 : (kw.level || 3);
         const isCore = typeof kw === 'string' ? false : (kw.isCore || false);
+        const isCollapsed = typeof kw === 'string' ? false : (kw.isCollapsed || false);
         
         const existingBubble = currentBubbles.find(b => b.dataset.word === name);
         
-        // 优先使用持久化的坐标，如果没有则随机初始化或从现有气泡读取
+        // 优先使用持久化的坐标
         let initialX, initialY;
         if (typeof kw !== 'string' && kw.x !== undefined && kw.y !== undefined) {
             initialX = kw.x;
@@ -238,6 +354,7 @@ const renderBubbles = (runSimulation = true) => {
             id: name,
             level: level,
             isCore: isCore,
+            isCollapsed: isCollapsed,
             x: initialX,
             y: initialY,
             vx: 0,
@@ -249,7 +366,9 @@ const renderBubbles = (runSimulation = true) => {
     const nodeMap = {};
     nodes.forEach(n => nodeMap[n.id] = n);
 
-    const connections = brainstormData.connections;
+    const connections = brainstormData.connections.filter(c => 
+        isNodeVisible(c.source) && isNodeVisible(c.target)
+    );
     const bubbleMap = {};
 
     // --- Force-Directed Simulation (Maintain User Logic) ---
@@ -330,16 +449,48 @@ const renderBubbles = (runSimulation = true) => {
             const sourceEl = bubbleMap[conn.source];
             const targetEl = bubbleMap[conn.target];
             if (sourceEl && targetEl) {
-                const sX = parseFloat(sourceEl.style.left) + sourceEl.offsetWidth / 2;
-                const sY = parseFloat(sourceEl.style.top) + sourceEl.offsetHeight / 2;
-                const tX = parseFloat(targetEl.style.left) + targetEl.offsetWidth / 2;
-                const tY = parseFloat(targetEl.style.top) + targetEl.offsetHeight / 2;
-                const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-                line.setAttribute("x1", sX); line.setAttribute("y1", sY);
-                line.setAttribute("x2", tX); line.setAttribute("y2", tY);
-                line.setAttribute("class", "connection-line");
-                line.style.opacity = 0.1 + (conn.strength || 5) / 15;
-                svgLayer.appendChild(line);
+                // 基于 style.left/top 计算中心点，避免 getBoundingClientRect 在缩放时的坐标系混乱
+                const sX_base = parseFloat(sourceEl.style.left) + sourceEl.offsetWidth / 2;
+                const sY_base = parseFloat(sourceEl.style.top) + sourceEl.offsetHeight / 2;
+                const tX_base = parseFloat(targetEl.style.left) + targetEl.offsetWidth / 2;
+                const tY_base = parseFloat(targetEl.style.top) + targetEl.offsetHeight / 2;
+                
+                const sLeft = parseFloat(sourceEl.style.left);
+                const tLeft = parseFloat(targetEl.style.left);
+                
+                let sX, sY, tX, tY;
+                
+                if (sLeft < tLeft) {
+                    // 源在左，目标在右：从源右侧中心到目标左侧中心
+                    sX = sLeft + sourceEl.offsetWidth;
+                    sY = sY_base;
+                    tX = tLeft;
+                    tY = tY_base;
+                } else {
+                    // 源在右，目标在左：从源左侧中心到目标右侧中心
+                    sX = sLeft;
+                    sY = sY_base;
+                    tX = tLeft + targetEl.offsetWidth;
+                    tY = tY_base;
+                }
+
+                // 优化贝塞尔曲线控制点：增加水平拉力，使曲线更像思维导图
+                const distH = Math.abs(tX - sX);
+                const distV = Math.abs(tY - sY);
+                // 动态调整控制点偏移量：水平距离越短，控制点越靠近中心；垂直距离越大，增加水平拉力
+                const cpOffset = Math.max(distH * 0.45, distV * 0.2, 50);
+                
+                const cp1X = (sLeft < tLeft) ? sX + cpOffset : sX - cpOffset;
+                const cp2X = (sLeft < tLeft) ? tX - cpOffset : tX + cpOffset;
+                
+                const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                const d = `M ${sX} ${sY} C ${cp1X} ${sY}, ${cp2X} ${tY}, ${tX} ${tY}`;
+                
+                path.setAttribute("d", d);
+                path.setAttribute("class", "connection-line");
+                path.setAttribute("fill", "none");
+                path.style.opacity = 0.2 + (conn.strength || 5) / 12;
+                svgLayer.appendChild(path);
             }
         });
     };
@@ -366,8 +517,31 @@ const renderBubbles = (runSimulation = true) => {
             bubble = document.createElement('div');
             bubble.className = `bubble entering level-${node.level}`;
             if (node.isCore) bubble.classList.add('is-core');
+            if (node.isCollapsed) bubble.classList.add('collapsed');
             bubble.dataset.word = node.id;
             bubble.textContent = node.id;
+
+            // 检查是否有子节点，如果有则添加折叠按钮
+            const hasChildren = brainstormData.allKeywords.some(k => 
+                typeof k !== 'string' && k.parent === node.id
+            );
+            
+            if (hasChildren) {
+                const toggle = document.createElement('div');
+                toggle.className = 'collapse-btn';
+                toggle.onclick = (e) => {
+                    e.stopPropagation();
+                    const kw = brainstormData.allKeywords.find(k => (typeof k === 'string' ? k : k.name) === node.id);
+                    if (kw && typeof kw !== 'string') {
+                        kw.isCollapsed = !kw.isCollapsed;
+                        saveToLocalStorage();
+                        applyMindMapLayout(); // 重新排版以收缩/展开空间
+                        renderBubbles(false);
+                    }
+                };
+                bubble.appendChild(toggle);
+            }
+
             viewport.appendChild(bubble);
             
             // Trigger entering animation
@@ -477,6 +651,30 @@ const renderBubbles = (runSimulation = true) => {
             // 更新层级和核心状态
             bubble.className = `bubble level-${node.level}`;
             if (node.isCore) bubble.classList.add('is-core');
+            if (node.isCollapsed) bubble.classList.add('collapsed');
+            
+            // 确保折叠按钮存在或被移除
+            const hasChildren = brainstormData.allKeywords.some(k => 
+                typeof k !== 'string' && k.parent === node.id
+            );
+            let toggle = bubble.querySelector('.collapse-btn');
+            if (hasChildren && !toggle) {
+                toggle = document.createElement('div');
+                toggle.className = 'collapse-btn';
+                toggle.onclick = (e) => {
+                    e.stopPropagation();
+                    const kw = brainstormData.allKeywords.find(k => (typeof k === 'string' ? k : k.name) === node.id);
+                    if (kw && typeof kw !== 'string') {
+                        kw.isCollapsed = !kw.isCollapsed;
+                        saveToLocalStorage();
+                        applyMindMapLayout();
+                        renderBubbles(false);
+                    }
+                };
+                bubble.appendChild(toggle);
+            } else if (!hasChildren && toggle) {
+                toggle.remove();
+            }
         }
         
         // Update position
@@ -643,21 +841,57 @@ document.addEventListener('DOMContentLoaded', () => {
 
     clearCacheBtn.addEventListener('click', clearAllData);
 
-    // --- Zoom Logic ---
-    const bubbleContainer = document.getElementById('bubbleContainer');
-    bubbleContainer.addEventListener('wheel', (e) => {
+    // --- Zoom & Pan Logic ---
+    const container = document.getElementById('bubbleContainer');
+    
+    // 缩放逻辑 (Wheel)
+    container.addEventListener('wheel', (e) => {
         e.preventDefault();
-        const delta = e.deltaY > 0 ? -0.1 : 0.1;
-        const newScale = Math.max(
-            brainstormData.zoom.min,
-            Math.min(brainstormData.zoom.max, brainstormData.zoom.scale + delta)
-        );
+        const zoom = brainstormData.zoom;
+        const delta = e.deltaY > 0 ? 0.9 : 1.1;
+        const newScale = Math.max(zoom.min, Math.min(zoom.max, zoom.scale * delta));
         
-        if (newScale !== brainstormData.zoom.scale) {
-            brainstormData.zoom.scale = newScale;
-            renderBubbles(false);
-        }
+        // 计算缩放中心点偏移，保持鼠标指向的位置在缩放后依然在鼠标下
+        const rect = container.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        
+        const ratio = newScale / zoom.scale;
+        zoom.offsetX = mouseX - (mouseX - zoom.offsetX) * ratio;
+        zoom.offsetY = mouseY - (mouseY - zoom.offsetY) * ratio;
+        
+        zoom.scale = newScale;
+        renderBubbles(false);
     }, { passive: false });
+
+    // 画布平移逻辑 (Pan)
+    let isPanning = false;
+    let startPanX, startPanY;
+
+    container.addEventListener('mousedown', (e) => {
+        // 只有点击容器本身或 Viewport 空白处才触发平移，不拦截气泡点击
+        if (e.target === container || e.target.id === 'bubbleViewport' || e.target.tagName === 'svg') {
+            isPanning = true;
+            startPanX = e.clientX - brainstormData.zoom.offsetX;
+            startPanY = e.clientY - brainstormData.zoom.offsetY;
+            container.style.cursor = 'grabbing';
+        }
+    });
+
+    window.addEventListener('mousemove', (e) => {
+        if (!isPanning) return;
+        brainstormData.zoom.offsetX = e.clientX - startPanX;
+        brainstormData.zoom.offsetY = e.clientY - startPanY;
+        renderBubbles(false);
+    });
+
+    window.addEventListener('mouseup', () => {
+        if (isPanning) {
+            isPanning = false;
+            container.style.cursor = 'crosshair';
+            saveToLocalStorage();
+        }
+    });
 
     // --- Speech Recognition Logic (AI Meeting Minutes) ---
     const voiceBtn = document.getElementById('voiceBtn');
@@ -713,8 +947,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (hasNewData) {
+                applyMindMapLayout(); // 新增：静默更新时也要应用布局
                 displayResults();
-                renderBubbles();
+                renderBubbles(false); // 禁用模拟
                 // 自动保存
                 saveToLocalStorage();
             }
@@ -824,6 +1059,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    // 自动排版按钮
+    const autoLayoutBtn = document.getElementById('autoLayoutBtn');
+    if (autoLayoutBtn) {
+        autoLayoutBtn.addEventListener('click', () => {
+            applyMindMapLayout();
+            renderBubbles(false); // 强制使用计算出的坐标渲染
+        });
+    }
+
     submitBtn.addEventListener('click', async () => {
         const text = ideaInput.value.trim();
         if (!text) return alert("请输入内容后再提交！");
@@ -870,8 +1114,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // --- 核心优化：立刻渲染 AI 结果，不等待搜索 ---
+            applyMindMapLayout(); // 新增：AI 生成后自动执行思维导图布局
             displayResults();
-            renderBubbles();
+            renderBubbles(false); // 渲染气泡，不运行力导向模拟
             renderMindmap();
             addThoughtToHistory(text, aiResult, thoughtHistory);
             

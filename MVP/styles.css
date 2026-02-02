@@ -311,13 +311,15 @@ button:hover {
 /* 气泡样式 */
 .bubble-container {
     position: relative;
-    height: 500px; /* 增加高度以容纳更多关键词 */
+    height: 800px; /* 增加高度以容纳发散布局 */
     margin-bottom: 30px;
     background: rgba(74, 144, 226, 0.02);
     border-radius: 12px;
     overflow: hidden;
     border: 1px solid #eee;
-    cursor: grab;
+    cursor: crosshair; /* 空白处显示十字星，提示可拖动 */
+    background-image: radial-gradient(#ddd 0.5px, transparent 0);
+    background-size: 15px 15px; /* 缩小网格点阵提升大空间感 */
 }
 .bubble-container:active {
     cursor: grabbing;
@@ -328,9 +330,9 @@ button:hover {
     left: 0;
     width: 100%;
     height: 100%;
-    transform-origin: center center;
+    transform-origin: 0 0; /* 修改缩放原点为左上角，配合平移更自然 */
     transition: transform 0.1s ease-out;
-    pointer-events: none; /* 让事件穿透到 container 监听滚轮 */
+    pointer-events: none;
 }
 .bubble-viewport > * {
     pointer-events: auto; /* 恢复子元素的交互 */
@@ -346,10 +348,11 @@ button:hover {
 }
 .connection-line {
     stroke: var(--primary-color);
-    stroke-width: 1.5;
-    stroke-dasharray: 4;
-    opacity: 0.3;
-    animation: lineDash 20s linear infinite;
+    stroke-width: 2;
+    stroke-dasharray: 6;
+    opacity: 0.4;
+    animation: lineDash 30s linear infinite;
+    stroke-linecap: round;
 }
 @keyframes lineDash {
     to { stroke-dashoffset: -100; }
@@ -372,8 +375,40 @@ button:hover {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 5px;
+    gap: 8px;
     z-index: 2;
+}
+
+/* 节点折叠按钮 */
+.collapse-btn {
+    width: 20px;
+    height: 20px;
+    background: var(--primary-color);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-right: -10px;
+    margin-left: 2px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    z-index: 3;
+    pointer-events: auto;
+}
+.collapse-btn:hover {
+    transform: scale(1.2);
+    filter: brightness(1.1);
+}
+.bubble.collapsed {
+    border-style: dashed;
+    background: #f8fbff;
+    opacity: 0.8;
+}
+.bubble.collapsed:hover {
+    background: #eef5ff;
 }
 
 /* 气泡层级样式 */
