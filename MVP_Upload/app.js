@@ -1048,8 +1048,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 applyMindMapLayout(); // 新增：静默更新时也要应用布局
                 displayResults();
                 renderBubbles(false); // 禁用模拟
-                // 自动保存
-                saveToLocalStorage();
+                
+                // --- 新增：语音输入生成关键词后，也触发灵感推荐 ---
+                if (aiResult.keywords && aiResult.keywords.length > 0) {
+                    const container = document.getElementById('inspirationContainer');
+                    if (container) container.innerHTML = `<div class="loading-dots" style="text-align:center; padding:20px;">正在连接云端灵感库...</div>`;
+                    
+                    callSearchAPI(aiResult.keywords[0]).then(results => {
+                        brainstormData.inspiration = results;
+                        saveToLocalStorage();
+                        renderInspiration(); 
+                    });
+                } else {
+                    // 自动保存
+                    saveToLocalStorage();
+                }
             }
             lastAITextLength = text.length;
         } catch (err) {
@@ -1144,6 +1157,50 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             startRecording();
         }
+    });
+
+    // 下载纪要功能
+    const downloadMinutesBtn = document.getElementById('downloadMinutesBtn');
+    
+    const downloadMeetingMinutes = () => {
+        const meetingContentElement = document.getElementById('meetingContent');
+        
+        // 获取纪要内容
+        let content = '';
+        if (meetingContentElement.querySelector('p')) {
+            // 如果显示的是默认提示，则没有实际内容
+            content = '暂无会议纪要内容';
+        } else {
+            // 获取实际的会议纪要文本
+            content = meetingContentElement.textContent || meetingContentElement.innerText;
+        }
+        
+        // 添加文档头信息
+        const header = '灵感气泡 - AI会议纪要\n\n';
+        const footer = '\n\n---\n导出于灵感气泡 AI 头脑风暴工具';
+        const fullContent = header + content + footer;
+        
+        // 创建Blob对象
+        const blob = new Blob([fullContent], { type: 'text/plain;charset=utf-8' });
+        
+        // 创建下载链接
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `AI会议纪要_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`;
+        
+        // 触发下载
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        
+        // 释放URL对象
+        URL.revokeObjectURL(url);
+    };
+    
+    downloadMinutesBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        downloadMeetingMinutes();
     });
 
     // 板块折叠逻辑

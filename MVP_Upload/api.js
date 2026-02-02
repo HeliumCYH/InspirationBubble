@@ -19,7 +19,7 @@ async function callAIModel(content, brainstormData) {
 1. **关键词提取**：从讨论内容中提取核心关键词，拒绝冗余，不遗漏核心点。
 2. **逻辑层级**：梳理信息层级（Level 1-3+），Level 1 为核心主题。
 3. **结构化生成**：仅包含提取的关键词，无需长句。
-4. **严禁加工**：仅提炼原文信息，不做任何引申或杜撰。
+4. **严禁加工**：仅提炼原文信息，不做任何引申或杜典。
 
 ## 技术要求：
 1. **跨灵感关联**：尝试建立本次关键词与现有关键词 [${existingKeywords}] 之间的联系。
@@ -28,6 +28,7 @@ async function callAIModel(content, brainstormData) {
 ## JSON 结构要求：
 {
   "summary": "根节点内容", 
+  "recent_summary": "最近输入内容的简短摘要（不超过20字）", 
   "keywords": [
     {"name": "关键词", "level": 层级, "parent": "父节点名或null"},
     ...
@@ -39,42 +40,60 @@ async function callAIModel(content, brainstormData) {
 
 内容：${content}`;
 
-    try {
-        const response = await fetch(`${BACKEND_URL}/api/ai`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                model: "Qwen/Qwen2.5-7B-Instruct",
-                messages: [{ role: "user", content: prompt }],
-                max_tokens: 4096,
-                temperature: 0.5,
-                enable_thinking: false,
-                response_format: { "type": "json_object" }
-            })
-        });
-
-        if (!response.ok) {
-            throw new Error(`AI 请求失败 (状态码: ${response.status})`);
-        }
-
-        const res = await response.json();
-        console.log(' [Debug] AI Raw Response:', res); // 打印 AI 原始响应
-
-        let rawContent = res.choices[0].message.content;
-        rawContent = rawContent.replace(/```json|```/g, "").trim();
-        
+    // 定义模型优先级列表
+    const modelPriority = [
+        "Qwen/Qwen3-32B",
+        "Qwen/Qwen3-8B",
+        "Qwen/Qwen2.5-7B-Instruct"
+    ];
+    
+    // 尝试每个模型直到成功
+    for (const model of modelPriority) {
         try {
-            const parsed = JSON.parse(rawContent);
-            console.log(' [Debug] AI Parsed Content:', parsed); // 打印 AI 解析后的内容
-            return parsed;
-        } catch (e) {
-            console.error(' [Error] AI JSON Parse Failed:', rawContent);
-            throw e;
+            console.log(` [Debug] 尝试使用模型: ${model}`);
+            
+            const response = await fetch(`${BACKEND_URL}/api/ai`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: model,
+                    messages: [{ role: "user", content: prompt }],
+                    max_tokens: 4096,
+                    temperature: 0.5,
+                    enable_thinking: false,
+                    response_format: { "type": "json_object" }
+                })
+            });
+
+            if (!response.ok) {
+                console.warn(`AI 请求失败 (状态码: ${response.status}), 尝试下一个模型...`);
+                continue; // 尝试下一个模型
+            }
+
+            const res = await response.json();
+            console.log(' [Debug] AI Raw Response:', res); // 打印 AI 原始响应
+
+            let rawContent = res.choices[0].message.content;
+            rawContent = rawContent.replace(/```json|```/g, "").trim();
+            
+            try {
+                const parsed = JSON.parse(rawContent);
+                console.log(' [Debug] AI Parsed Content:', parsed); // 打印 AI 解析后的内容
+                return parsed; // 成功解析，返回结果
+            } catch (e) {
+                console.error(' [Error] AI JSON Parse Failed:', rawContent);
+                console.warn('JSON 解析失败，尝试下一个模型...');
+                continue; // JSON解析失败，尝试下一个模型
+            }
+        } catch (error) {
+            console.error(`模型 ${model} 调用失败:`, error);
+            console.warn(`继续尝试下一个模型...`);
+            continue; // 继续尝试下一个模型
         }
-    } catch (error) {
-        console.error('AI 调用失败:', error);
-        throw error;
     }
+    
+    // 如果所有模型都失败，抛出错误
+    throw new Error('所有AI模型都无法使用，请检查网络连接和API密钥配置');
 }
 
 /**
@@ -145,25 +164,40 @@ JSON 结构：{"brief": "总结内容", "tags": ["标签1", "标签2", "标签3"
 标题：${title}
 片段：${snippet}`;
 
-    try {
-        const response = await fetch(`${BACKEND_URL}/api/ai`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                model: "Qwen/Qwen2.5-7B-Instruct",
-                messages: [{ role: "user", content: prompt }],
-                max_tokens: 200,
-                temperature: 0.3,
-                response_format: { "type": "json_object" }
-            })
-        });
+    // 定义模型优先级列表
+    const modelPriority = [
+        "Qwen/Qwen3-32B",
+        "Qwen/Qwen3-8B",
+        "Qwen/Qwen2.5-7B-Instruct"
+    ];    
+    
+    // 尝试每个模型直到成功
+    for (const model of modelPriority) {
+        try {
+            const response = await fetch(`${BACKEND_URL}/api/ai`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: model,
+                    messages: [{ role: "user", content: prompt }],
+                    max_tokens: 200,
+                    temperature: 0.3,
+                    response_format: { "type": "json_object" }
+                })
+            });
 
-        const res = await response.json();
-        let content = res.choices[0].message.content;
-        content = content.replace(/```json|```/g, "").trim();
-        return JSON.parse(content);
-    } catch (error) {
-        console.error('搜索条目总结失败:', error);
-        return { brief: "自动总结生成失败", tags: ["灵感", "参考", "案例"] };
+            const res = await response.json();
+            let content = res.choices[0].message.content;
+            content = content.replace(/```json|```/g, "").trim();
+            return JSON.parse(content);
+        } catch (error) {
+            console.error(`搜索条目总结失败，模型 ${model} 调用失败:`, error);
+            console.warn(`继续尝试下一个模型...`);
+            continue; // 继续尝试下一个模型
+        }
     }
+    
+    // 如果所有模型都失败，返回默认值
+    console.error('搜索条目总结所有模型都无法使用，返回默认值');
+    return { brief: "自动总结生成失败", tags: ["灵感", "参考", "案例"] };
 }
