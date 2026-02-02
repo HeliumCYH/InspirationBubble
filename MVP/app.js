@@ -191,9 +191,122 @@ document.addEventListener('contextmenu', (e) => {
 /**
  * 级联思维导图排版算法 (V2 - 增强稳定性)
  */
+// --- Utility Helpers ---
+const isNodeVisible = (nodeName) => {
+    let current = brainstormData.allKeywords.find(k => (typeof k === 'string' ? k : k.name) === nodeName);
+    if (!current || typeof current === 'string') return true;
+    
+    let parentName = current.parent;
+    while (parentName) {
+        const parentNode = brainstormData.allKeywords.find(k => (typeof k === 'string' ? k : k.name) === parentName);
+        if (parentNode && typeof parentNode !== 'string' && parentNode.isCollapsed) return false;
+        parentName = (parentNode && typeof parentNode !== 'string') ? parentNode.parent : null;
+    }
+    return true;
+};
+
 const applyMindMapLayout = () => {
     const keywords = brainstormData.allKeywords;
     if (keywords.length === 0) return;
+
+    // --- 核心优化：自动折叠逻辑 (Auto-Collapse Logic) ---
+    // 防止内容过多导致画面拥挤或超出边界
+    const container = document.getElementById('bubbleContainer');
+    const viewportHeight = container ? container.offsetHeight : 800;
+    
+    const MAX_VISIBLE_NODES = 25; // 画面允许的最大可见节点数
+    const MAX_CHILDREN_PER_NODE = 6; // 单个节点允许的最大子节点数
+
+    const performAutoCollapse = () => {
+        let changed = false;
+        
+        // 1. 检查子节点数量：如果某个节点直接拥有的子节点太多，自动收起以保持整洁
+        keywords.forEach(kw => {
+            if (typeof kw !== 'string' && !kw.isCollapsed) {
+                const children = keywords.filter(k => typeof k !== 'string' && k.parent === kw.name);
+                if (children.length > MAX_CHILDREN_PER_NODE) {
+                    kw.isCollapsed = true;
+                    changed = true;
+                }
+            }
+        });
+
+        // 2. 检查总数：如果总可见数依然超标，从最深层开始递归收起
+        let visibleCount = keywords.filter(k => isNodeVisible(typeof k === 'string' ? k : k.name)).length;
+        if (visibleCount > MAX_VISIBLE_NODES) {
+            const collapseCandidates = [...keywords]
+                .filter(k => typeof k !== 'string' && !k.isCollapsed && k.level >= 2)
+                .sort((a, b) => (b.level || 0) - (a.level || 0));
+            
+            for (let kw of collapseCandidates) {
+                const hasChildren = keywords.some(k => typeof k !== 'string' && k.parent === kw.name);
+                if (hasChildren) {
+                    kw.isCollapsed = true;
+                    changed = true;
+                    visibleCount = keywords.filter(k => isNodeVisible(typeof k === 'string' ? k : k.name)).length;
+                    if (visibleCount <= MAX_VISIBLE_NODES) break;
+                }
+            }
+        }
+
+        // 3. 动态高度检查：如果排版后的高度远超容器高度，强制收起部分节点
+        // 此时需要预运行一下计算逻辑
+        const getProjectedHeight = () => {
+            // 局部模拟 calculateSubtreeHeight
+            const testNodes = keywords.map(k => {
+                const name = typeof k === 'string' ? k : k.name;
+                return { name, isCollapsed: (typeof k === 'string' ? false : k.isCollapsed), level: (typeof k === 'string' ? 3 : k.level) };
+            });
+            const childrenMapTest = {};
+            testNodes.forEach(n => {
+                const kw = keywords.find(k => (typeof k === 'string' ? k : k.name) === n.name);
+                if (kw && typeof kw !== 'string' && kw.parent) {
+                    if (!childrenMapTest[kw.parent]) childrenMapTest[kw.parent] = [];
+                    childrenMapTest[kw.parent].push(n);
+                }
+            });
+            
+            const calcH = (node) => {
+                const children = childrenMapTest[node.name] || [];
+                if (node.isCollapsed || children.length === 0) return 100;
+                let h = 0;
+                children.forEach(c => h += calcH(c));
+                return Math.max(h, 100);
+            };
+            
+            const testRoots = testNodes.filter(n => {
+                const kw = keywords.find(k => (typeof k === 'string' ? k : k.name) === n.name);
+                return !kw || !kw.parent || !testNodes.some(p => p.name === kw.parent);
+            });
+            
+            let totalH = 0;
+            testRoots.forEach(r => totalH += calcH(r));
+            return totalH + (testRoots.length - 1) * 50;
+        };
+
+        let projectedH = getProjectedHeight();
+        if (projectedH > viewportHeight * 1.5) {
+            // 继续收起
+            const moreCandidates = [...keywords]
+                .filter(k => typeof k !== 'string' && !k.isCollapsed && k.level >= 1)
+                .sort((a, b) => (b.level || 0) - (a.level || 0));
+            
+            for (let kw of moreCandidates) {
+                const hasChildren = keywords.some(k => typeof k !== 'string' && k.parent === kw.name);
+                if (hasChildren) {
+                    kw.isCollapsed = true;
+                    changed = true;
+                    if (getProjectedHeight() <= viewportHeight * 1.5) break;
+                }
+            }
+        }
+
+        return changed;
+    };
+
+    // 执行自动折叠优化
+    performAutoCollapse();
+    // -----------------------------------------------
 
     // 1. 构建树结构并标准化节点
     const nodes = keywords.map(k => {
@@ -248,7 +361,6 @@ const applyMindMapLayout = () => {
     };
 
     // 4. 执行计算并垂直居中
-    const container = document.getElementById('bubbleContainer');
     let totalHeight = 0;
     roots.forEach(root => {
         totalHeight += calculateSubtreeHeight(root);
@@ -290,20 +402,6 @@ const renderBubbles = (runSimulation = true) => {
     const svgLayer = document.getElementById('bubbleSvg');
     if (!container || !viewport || !svgLayer) return;
 
-    // 辅助函数：判断节点是否可见（祖先没有被折叠）
-    const isNodeVisible = (nodeName) => {
-        let current = brainstormData.allKeywords.find(k => (typeof k === 'string' ? k : k.name) === nodeName);
-        if (!current || typeof current === 'string') return true;
-        
-        let parentName = current.parent;
-        while (parentName) {
-            const parentNode = brainstormData.allKeywords.find(k => (typeof k === 'string' ? k : k.name) === parentName);
-            if (parentNode && typeof parentNode !== 'string' && parentNode.isCollapsed) return false;
-            parentName = (parentNode && typeof parentNode !== 'string') ? parentNode.parent : null;
-        }
-        return true;
-    };
-    
     // 应用当前缩放与位移
     const zoom = brainstormData.zoom;
     viewport.style.transform = `translate(${zoom.offsetX}px, ${zoom.offsetY}px) scale(${zoom.scale})`;
